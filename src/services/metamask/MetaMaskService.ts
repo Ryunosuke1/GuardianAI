@@ -3,6 +3,9 @@ import { Dapp } from '@metamask/sdk-react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ethers } from 'ethers';
 
+// 開発モードフラグの定義
+const IS_DEV_MODE = process.env.NODE_ENV === 'development';
+
 /**
  * MetaMaskサービスクラス
  * MetaMask SDKとの統合を管理し、ウォレット接続、トランザクション署名、
@@ -41,7 +44,7 @@ class MetaMaskService {
         communicationLayerPreference: 'webrtc',
         // ログ設定
         logging: {
-          developerMode: __DEV__,
+          developerMode: IS_DEV_MODE,
         },
         // 接続後のコールバック
         onConnect: this.handleConnect.bind(this),

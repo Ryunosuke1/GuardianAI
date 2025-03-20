@@ -41,6 +41,7 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
   const [accounts, setAccounts] = useState<string[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
+  const [currentChainId, setCurrentChainId] = useState<string | null>(null);
   
   // SDK初期化の監視
   useEffect(() => {
@@ -79,7 +80,7 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
         : chainId;
       
       // 状態を更新
-      setChainId(hexChainId);
+      setCurrentChainId(hexChainId);
     }
   }, [chainId]);
   
@@ -228,7 +229,7 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
     isConnecting,
     isConnected,
     accounts,
-    chainId,
+    chainId: currentChainId,
     connect,
     disconnect,
     sendTransaction,
