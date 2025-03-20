@@ -1,0 +1,33 @@
+{
+  "preset": "react-native",
+  "transform": {
+    "^.+\\.(js|jsx|ts|tsx)$": "babel-jest"
+  },
+  "moduleFileExtensions": [
+    "ts",
+    "tsx",
+    "js",
+    "jsx",
+    "json",
+    "node"
+  ],
+  "testRegex": "(/__tests__/.*|(\\.|/)(test|spec))\\.(jsx?|tsx?)$",
+  "testPathIgnorePatterns": [
+    "/node_modules/"
+  ],
+  "transformIgnorePatterns": [
+    "node_modules/(?!(react-native|@react-native|react-navigation|@react-navigation/.*|react-native-svg|react-native-paper)/)"
+  ],
+  "setupFiles": [
+    "./jest.setup.js"
+  ],
+  "collectCoverage": true,
+  "collectCoverageFrom": [
+    "src/**/*.{js,jsx,ts,tsx}",
+    "!src/**/*.d.ts"
+  ],
+  "coveragePathIgnorePatterns": [
+    "/node_modules/",
+    "/jest"
+  ]
+}
