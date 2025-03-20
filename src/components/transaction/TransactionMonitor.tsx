@@ -1,304 +1,262 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
-import { Text, Card, DataTable, Badge, IconButton, useTheme } from 'react-native-paper';
-import { TransactionData, TransactionType } from '../../services/transaction/TransactionMonitorService';
+import { View, StyleSheet, ScrollView } from 'react-native';
+import { Text, Card, DataTable, Badge, IconButton, Switch } from 'react-native-paper';
+import { useMetaMask } from '../../services/metamask/MetaMaskContext';
 import transactionMonitorService from '../../services/transaction/TransactionMonitorService';
 import transactionApprovalService, { ApprovalStatus } from '../../services/transaction/TransactionApprovalService';
-import { useMetaMask } from '../../services/metamask/MetaMaskContext';
-import nordicTheme from '../../utils/theme';
+import { TransactionType, TransactionData } from '../../types/transaction';
+import { TransactionApproval } from '../../types/approval';
+import { nordicTheme } from '../../utils/theme';
+import { NordicIcon } from '../../utils/nordicIcons';
+
+// トランザクションタイプの色を取得
+const getTransactionTypeColor = (type: TransactionType): string => {
+  const { colors } = nordicTheme.custom;
+  
+  switch (type) {
+    case TransactionType.TRANSFER:
+      return colors.transaction.transfer;
+    case TransactionType.SWAP:
+      return colors.transaction.swap;
+    case TransactionType.APPROVAL:
+      return colors.transaction.approval;
+    case TransactionType.MINT:
+      return colors.transaction.mint;
+    case TransactionType.BURN:
+      return colors.transaction.burn;
+    case TransactionType.STAKE:
+      return colors.transaction.stake;
+    case TransactionType.UNSTAKE:
+      return colors.transaction.unstake;
+    case TransactionType.CLAIM:
+      return colors.transaction.claim;
+    case TransactionType.CONTRACT_INTERACTION:
+      return colors.transaction.contract;
+    default:
+      return colors.transaction.unknown;
+  }
+};
+
+// トランザクションタイプの名前を取得
+const getTransactionTypeName = (type: TransactionType): string => {
+  switch (type) {
+    case TransactionType.TRANSFER:
+      return '送金';
+    case TransactionType.SWAP:
+      return 'スワップ';
+    case TransactionType.APPROVAL:
+      return '承認';
+    case TransactionType.MINT:
+      return 'ミント';
+    case TransactionType.BURN:
+      return 'バーン';
+    case TransactionType.STAKE:
+      return 'ステーク';
+    case TransactionType.UNSTAKE:
+      return 'アンステーク';
+    case TransactionType.CLAIM:
+      return '請求';
+    case TransactionType.CONTRACT_INTERACTION:
+      return 'コントラクト';
+    default:
+      return '不明';
+  }
+};
+
+// 承認ステータスの色を取得
+const getApprovalStatusColor = (status: ApprovalStatus): string => {
+  const { colors } = nordicTheme.custom;
+  
+  switch (status) {
+    case ApprovalStatus.PENDING:
+      return colors.state.warning;
+    case ApprovalStatus.APPROVED:
+      return colors.state.success;
+    case ApprovalStatus.REJECTED:
+      return colors.state.error;
+    default:
+      return colors.state.disabled;
+  }
+};
+
+// 承認ステータスの名前を取得
+const getApprovalStatusName = (status: ApprovalStatus): string => {
+  switch (status) {
+    case ApprovalStatus.PENDING:
+      return '保留中';
+    case ApprovalStatus.APPROVED:
+      return '承認済み';
+    case ApprovalStatus.REJECTED:
+      return '拒否済み';
+    default:
+      return '不明';
+  }
+};
+
+// アドレスを短縮
+const shortenAddress = (address: string): string => {
+  if (!address) return '';
+  return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+};
 
 /**
- * トランザクション監視インターフェースコンポーネント
- * リアルタイムでトランザクションを監視し、承認/拒否の操作を提供します
+ * トランザクション監視コンポーネント
  */
 const TransactionMonitor: React.FC = () => {
-  const theme = useTheme();
-  const { colors, custom } = nordicTheme;
-  const { isConnected } = useMetaMask();
-
-  // 状態管理
-  const [pendingTransactions, setPendingTransactions] = useState<TransactionData[]>([]);
-  const [confirmedTransactions, setConfirmedTransactions] = useState<TransactionData[]>([]);
-  const [pendingApprovals, setPendingApprovals] = useState<any[]>([]);
+  const { isConnected, accounts } = useMetaMask();
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+  const [pendingApprovals, setPendingApprovals] = useState<TransactionApproval[]>([]);
+  const [confirmedTransactions, setConfirmedTransactions] = useState<TransactionData[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const { custom, colors } = nordicTheme;
 
-  // 監視状態の初期化
+  // コンポーネントマウント時の処理
   useEffect(() => {
-    const initializeMonitoring = async () => {
-      if (!isConnected) {
-        setError('ウォレットが接続されていません');
-        return;
-      }
-
-      try {
-        // トランザクション監視サービスを初期化
-        const initialized = await transactionMonitorService.initialize();
-        if (!initialized) {
-          setError('トランザクション監視サービスの初期化に失敗しました');
-          return;
-        }
-
-        // 承認サービスを初期化
-        transactionApprovalService.initialize();
-
-        // イベントリスナーを設定
-        setupEventListeners();
-
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '不明なエラーが発生しました');
-      }
+    // トランザクション監視サービスのイベントリスナーを設定
+    const onPendingTransaction = (tx: TransactionData) => {
+      // 確認済みトランザクションを更新
+      setConfirmedTransactions(prev => [tx, ...prev].slice(0, 20));
     };
-
-    initializeMonitoring();
-
+    
+    const onConfirmedTransaction = (tx: TransactionData) => {
+      // 確認済みトランザクションを更新
+      setConfirmedTransactions(prev => {
+        const filtered = prev.filter(t => t.hash !== tx.hash);
+        return [tx, ...filtered].slice(0, 20);
+      });
+    };
+    
+    // トランザクション承認サービスのイベントリスナーを設定
+    const onApprovalUpdate = () => {
+      // 保留中の承認を取得
+      const approvals = transactionApprovalService.getApprovals();
+      setPendingApprovals(approvals);
+    };
+    
+    // イベントリスナーを登録
+    transactionMonitorService.on('pending_transaction', onPendingTransaction);
+    transactionMonitorService.on('confirmed_transaction', onConfirmedTransaction);
+    transactionApprovalService.on('approval_update', onApprovalUpdate);
+    
+    // 初期データを読み込み
+    loadInitialData();
+    
     // クリーンアップ関数
     return () => {
-      // イベントリスナーを削除
-      cleanupEventListeners();
+      // イベントリスナーを解除
+      transactionMonitorService.off('pending_transaction', onPendingTransaction);
+      transactionMonitorService.off('confirmed_transaction', onConfirmedTransaction);
+      transactionApprovalService.off('approval_update', onApprovalUpdate);
       
       // 監視を停止
       if (isMonitoring) {
         transactionMonitorService.stopMonitoring();
       }
     };
-  }, [isConnected]);
-
-  // イベントリスナーの設定
-  const setupEventListeners = () => {
-    // 保留中のトランザクションイベント
-    transactionMonitorService.on('pending_transaction', handlePendingTransaction);
-    
-    // 確認済みトランザクションイベント
-    transactionMonitorService.on('confirmed_transaction', handleConfirmedTransaction);
-    
-    // 監視開始イベント
-    transactionMonitorService.on('monitoring_started', () => setIsMonitoring(true));
-    
-    // 監視停止イベント
-    transactionMonitorService.on('monitoring_stopped', () => setIsMonitoring(false));
-    
-    // 承認リクエストイベント
-    transactionApprovalService.on('approval_requested', handleApprovalRequested);
-    
-    // 承認イベント
-    transactionApprovalService.on('transaction_approved', handleTransactionApproved);
-    
-    // 拒否イベント
-    transactionApprovalService.on('transaction_rejected', handleTransactionRejected);
-    
-    // 自動承認イベント
-    transactionApprovalService.on('transaction_auto_approved', handleTransactionAutoApproved);
-    
-    // 期限切れイベント
-    transactionApprovalService.on('approval_expired', handleApprovalExpired);
-  };
-
-  // イベントリスナーのクリーンアップ
-  const cleanupEventListeners = () => {
-    transactionMonitorService.removeAllListeners('pending_transaction');
-    transactionMonitorService.removeAllListeners('confirmed_transaction');
-    transactionMonitorService.removeAllListeners('monitoring_started');
-    transactionMonitorService.removeAllListeners('monitoring_stopped');
-    
-    transactionApprovalService.removeAllListeners('approval_requested');
-    transactionApprovalService.removeAllListeners('transaction_approved');
-    transactionApprovalService.removeAllListeners('transaction_rejected');
-    transactionApprovalService.removeAllListeners('transaction_auto_approved');
-    transactionApprovalService.removeAllListeners('approval_expired');
-  };
-
-  // 保留中のトランザクションハンドラー
-  const handlePendingTransaction = (transaction: TransactionData) => {
-    setPendingTransactions(prev => [transaction, ...prev]);
-    
-    // 承認リクエストを作成
-    transactionApprovalService.requestApproval(transaction);
-  };
-
-  // 確認済みトランザクションハンドラー
-  const handleConfirmedTransaction = (transaction: TransactionData) => {
-    // 保留中から削除
-    setPendingTransactions(prev => prev.filter(tx => tx.hash !== transaction.hash));
-    
-    // 確認済みに追加
-    setConfirmedTransactions(prev => [transaction, ...prev]);
-  };
-
-  // 承認リクエストハンドラー
-  const handleApprovalRequested = (request: any) => {
-    setPendingApprovals(prev => [request, ...prev]);
-  };
-
-  // トランザクション承認ハンドラー
-  const handleTransactionApproved = (request: any) => {
-    updateApprovalStatus(request);
-  };
-
-  // トランザクション拒否ハンドラー
-  const handleTransactionRejected = (request: any) => {
-    updateApprovalStatus(request);
-  };
-
-  // トランザクション自動承認ハンドラー
-  const handleTransactionAutoApproved = (request: any) => {
-    updateApprovalStatus(request);
-  };
-
-  // 承認期限切れハンドラー
-  const handleApprovalExpired = (request: any) => {
-    updateApprovalStatus(request);
-  };
-
-  // 承認ステータスの更新
-  const updateApprovalStatus = (request: any) => {
-    setPendingApprovals(prev => 
-      prev.map(item => 
-        item.id === request.id ? request : item
-      )
-    );
-  };
-
-  // 監視の開始/停止
-  const toggleMonitoring = () => {
-    if (isMonitoring) {
-      transactionMonitorService.stopMonitoring();
+  }, []);
+  
+  // 接続状態が変わったときの処理
+  useEffect(() => {
+    if (isConnected && accounts.length > 0) {
+      // アカウントが接続されたら監視対象に追加
+      transactionMonitorService.addWatchedAddress(accounts[0]);
+      
+      // 監視中なら再起動
+      if (isMonitoring) {
+        toggleMonitoring();
+      }
     } else {
-      transactionMonitorService.startMonitoring();
+      // 接続が切れたら監視を停止
+      if (isMonitoring) {
+        toggleMonitoring();
+      }
+    }
+  }, [isConnected, accounts]);
+  
+  // 初期データを読み込む
+  const loadInitialData = async () => {
+    setIsLoading(true);
+    
+    try {
+      // 保留中の承認を取得
+      const approvals = transactionApprovalService.getApprovals();
+      setPendingApprovals(approvals);
+      
+      // 確認済みトランザクションを取得
+      const confirmed = transactionMonitorService.getConfirmedTransactions();
+      setConfirmedTransactions(confirmed.slice(0, 20));
+    } catch (error) {
+      console.error('初期データの読み込みに失敗しました:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
-
-  // トランザクションの承認
-  const approveTransaction = (requestId: string) => {
-    transactionApprovalService.approveTransaction(requestId);
-  };
-
-  // トランザクションの拒否
-  const rejectTransaction = (requestId: string) => {
-    transactionApprovalService.rejectTransaction(requestId);
-  };
-
-  // トランザクションタイプに応じた色を取得
-  const getTransactionTypeColor = (type: TransactionType): string => {
-    switch (type) {
-      case TransactionType.TRANSFER:
-        return colors.primary.main;
-      case TransactionType.SWAP:
-        return colors.accent.main;
-      case TransactionType.APPROVAL:
-        return colors.secondary.main;
-      case TransactionType.CONTRACT_INTERACTION:
-        return colors.state.info;
-      default:
-        return colors.text.secondary;
+  
+  // 監視の切り替え
+  const toggleMonitoring = async () => {
+    try {
+      if (isMonitoring) {
+        // 監視を停止
+        transactionMonitorService.stopMonitoring();
+        setIsMonitoring(false);
+      } else {
+        // 監視を開始
+        if (isConnected && accounts.length > 0) {
+          // アカウントが接続されていれば監視対象に追加
+          transactionMonitorService.addWatchedAddress(accounts[0]);
+        }
+        
+        // 監視を開始
+        const success = await transactionMonitorService.startMonitoring();
+        setIsMonitoring(success);
+      }
+    } catch (error) {
+      console.error('監視の切り替えに失敗しました:', error);
     }
   };
-
-  // トランザクションタイプの表示名を取得
-  const getTransactionTypeName = (type: TransactionType): string => {
-    switch (type) {
-      case TransactionType.TRANSFER:
-        return '送金';
-      case TransactionType.SWAP:
-        return 'スワップ';
-      case TransactionType.APPROVAL:
-        return '承認';
-      case TransactionType.CONTRACT_INTERACTION:
-        return 'コントラクト操作';
-      default:
-        return '不明';
-    }
+  
+  // トランザクションを承認
+  const approveTransaction = (approvalId: string) => {
+    transactionApprovalService.approveTransaction(approvalId);
   };
-
-  // 承認ステータスに応じた色を取得
-  const getApprovalStatusColor = (status: ApprovalStatus): string => {
-    switch (status) {
-      case ApprovalStatus.APPROVED:
-      case ApprovalStatus.AUTO_APPROVED:
-        return colors.state.success;
-      case ApprovalStatus.REJECTED:
-        return colors.state.error;
-      case ApprovalStatus.PENDING:
-        return colors.state.warning;
-      case ApprovalStatus.EXPIRED:
-        return colors.text.disabled;
-      default:
-        return colors.text.secondary;
-    }
-  };
-
-  // 承認ステータスの表示名を取得
-  const getApprovalStatusName = (status: ApprovalStatus): string => {
-    switch (status) {
-      case ApprovalStatus.APPROVED:
-        return '承認済み';
-      case ApprovalStatus.AUTO_APPROVED:
-        return '自動承認';
-      case ApprovalStatus.REJECTED:
-        return '拒否';
-      case ApprovalStatus.PENDING:
-        return '保留中';
-      case ApprovalStatus.EXPIRED:
-        return '期限切れ';
-      default:
-        return '不明';
-    }
-  };
-
-  // アドレスを短縮表示する関数
-  const shortenAddress = (address: string): string => {
-    return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`;
+  
+  // トランザクションを拒否
+  const rejectTransaction = (approvalId: string) => {
+    transactionApprovalService.rejectTransaction(approvalId);
   };
 
   return (
     <ScrollView style={styles.container}>
+      {/* ヘッダー */}
       <View style={styles.header}>
         <Text style={styles.title}>トランザクション監視</Text>
         <Text style={styles.subtitle}>
-          リアルタイムでトランザクションを監視し、想定外の取引を検知します
+          {isConnected
+            ? `接続中: ${shortenAddress(accounts[0])}`
+            : 'ウォレットに接続してください'}
         </Text>
       </View>
-
-      {/* エラー表示 */}
-      {error && (
-        <Card style={[styles.card, { borderLeftColor: colors.state.error, borderLeftWidth: 4 }]}>
-          <Card.Content>
-            <Text style={{ color: colors.state.error }}>{error}</Text>
-          </Card.Content>
-        </Card>
-      )}
-
+      
       {/* 監視コントロール */}
       <Card style={[styles.card, { ...custom.shadows.md }]}>
         <Card.Content>
           <View style={styles.monitoringControl}>
-            <Text style={styles.cardTitle}>監視ステータス</Text>
-            <Badge
-              style={{
-                backgroundColor: isMonitoring ? colors.state.success : colors.state.error,
-              }}
-            >
-              {isMonitoring ? 'アクティブ' : '停止中'}
-            </Badge>
+            <Text style={styles.cardTitle}>監視状態</Text>
+            <Switch
+              value={isMonitoring}
+              onValueChange={toggleMonitoring}
+              disabled={!isConnected}
+              color={colors.primary}
+            />
           </View>
-          <TouchableOpacity
-            style={[
-              styles.button,
-              {
-                backgroundColor: isMonitoring ? colors.state.error : colors.state.success,
-              },
-            ]}
-            onPress={toggleMonitoring}
-            disabled={!isConnected}
-          >
-            <Text style={styles.buttonText}>
-              {isMonitoring ? '監視を停止' : '監視を開始'}
-            </Text>
-          </TouchableOpacity>
+          <Text>
+            {isMonitoring
+              ? '監視中: トランザクションを監視しています'
+              : '停止中: トランザクションの監視は停止しています'}
+          </Text>
         </Card.Content>
       </Card>
-
+      
       {/* 承認待ちトランザクション */}
       <Card style={[styles.card, { ...custom.shadows.md }]}>
         <Card.Content>
@@ -310,10 +268,9 @@ const TransactionMonitor: React.FC = () => {
               <DataTable.Header>
                 <DataTable.Title>タイプ</DataTable.Title>
                 <DataTable.Title>送信先</DataTable.Title>
-                <DataTable.Title numeric>ステータス</DataTable.Title>
+                <DataTable.Title numeric>状態</DataTable.Title>
                 <DataTable.Title numeric>アクション</DataTable.Title>
               </DataTable.Header>
-
               {pendingApprovals
                 .filter(approval => approval.status === ApprovalStatus.PENDING)
                 .map((approval, index) => (
@@ -340,15 +297,13 @@ const TransactionMonitor: React.FC = () => {
                     <DataTable.Cell numeric>
                       <View style={styles.actionButtons}>
                         <IconButton
-                          icon="check"
+                          icon={() => <NordicIcon name="check" size={20} color={colors.state.success} />}
                           size={20}
-                          iconColor={colors.state.success}
                           onPress={() => approveTransaction(approval.id)}
                         />
                         <IconButton
-                          icon="close"
+                          icon={() => <NordicIcon name="close" size={20} color={colors.state.error} />}
                           size={20}
-                          iconColor={colors.state.error}
                           onPress={() => rejectTransaction(approval.id)}
                         />
                       </View>
@@ -359,7 +314,7 @@ const TransactionMonitor: React.FC = () => {
           )}
         </Card.Content>
       </Card>
-
+      
       {/* 最近のトランザクション */}
       <Card style={[styles.card, { ...custom.shadows.md }]}>
         <Card.Content>
@@ -373,7 +328,6 @@ const TransactionMonitor: React.FC = () => {
                 <DataTable.Title>送信先</DataTable.Title>
                 <DataTable.Title numeric>値</DataTable.Title>
               </DataTable.Header>
-
               {confirmedTransactions.slice(0, 5).map((tx, index) => (
                 <DataTable.Row key={index}>
                   <DataTable.Cell>
