@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import metaMaskService from './MetaMaskService';
 
 interface MetaMaskContextType {
   isConnected: boolean;
@@ -26,31 +27,37 @@ export const MetaMaskProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // MetaMaskの接続状態を監視
   useEffect(() => {
-    checkConnection();
-    window.ethereum?.on('accountsChanged', handleAccountsChanged);
-    window.ethereum?.on('chainChanged', handleChainChanged);
+    // 初期状態を設定
+    setIsConnected(metaMaskService.isWalletConnected());
+    setAccounts(metaMaskService.getAccounts());
+    setChainId(metaMaskService.getChainId());
+
+    // イベントリスナーを設定
+    metaMaskService.on('accountsChanged', (data: { accounts: string[] }) => {
+      handleAccountsChanged(data.accounts);
+    });
+
+    metaMaskService.on('chainChanged', (data: { chainId: string }) => {
+      handleChainChanged(data.chainId);
+    });
+
+    metaMaskService.on('connect', () => {
+      setIsConnected(true);
+    });
+
+    metaMaskService.on('disconnect', () => {
+      setIsConnected(false);
+      setAccounts([]);
+    });
 
     return () => {
-      window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum?.removeListener('chainChanged', handleChainChanged);
+      // クリーンアップ関数
+      metaMaskService.off('accountsChanged', handleAccountsChanged);
+      metaMaskService.off('chainChanged', handleChainChanged);
+      metaMaskService.off('connect', () => {});
+      metaMaskService.off('disconnect', () => {});
     };
   }, []);
-
-  // MetaMaskの接続状態をチェック
-  const checkConnection = async () => {
-    if (window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-        if (accounts.length > 0) {
-          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
-          handleAccountsChanged(accounts);
-          setChainId(chainId);
-        }
-      } catch (error) {
-        console.error('MetaMaskの接続状態の確認に失敗しました:', error);
-      }
-    }
-  };
 
   // アカウントの変更を処理
   const handleAccountsChanged = (accounts: string[]) => {
@@ -70,16 +77,10 @@ export const MetaMaskProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // MetaMaskに接続
   const connect = async () => {
-    if (!window.ethereum) {
-      alert('MetaMaskをインストールしてください');
-      return;
-    }
-
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      const accounts = await metaMaskService.connect();
       handleAccountsChanged(accounts);
-      setChainId(chainId);
+      setChainId(metaMaskService.getChainId());
     } catch (error) {
       console.error('MetaMaskへの接続に失敗しました:', error);
     }
@@ -87,9 +88,13 @@ export const MetaMaskProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // MetaMaskから切断
   const disconnect = () => {
-    setAccounts([]);
-    setIsConnected(false);
-    setChainId('');
+    metaMaskService.disconnect().then(() => {
+      setAccounts([]);
+      setIsConnected(false);
+      setChainId('');
+    }).catch(error => {
+      console.error('MetaMaskからの切断に失敗しました:', error);
+    });
   };
 
   return (

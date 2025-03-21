@@ -2,9 +2,11 @@ import 'react-native-get-random-values';
 import '@ethersproject/shims';
 import { Platform } from 'react-native';
 
+// ポリフィルのインポート
+import './src/polyfills';
+
 if (Platform.OS === 'web') {
-  // Webプラットフォーム用のポリフィル
-  require('react-native-polyfill-globals/auto');
+  // Webプラットフォーム用の追加ポリフィル
   require('text-encoding');
 }
 
@@ -13,7 +15,6 @@ import { SafeAreaView, StatusBar, StyleSheet, View, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Provider as PaperProvider, IconButton } from 'react-native-paper';
-import { SvgXml } from 'react-native-svg';
 
 // サービス
 import metaMaskService from './src/services/metamask/MetaMaskService';
@@ -23,7 +24,7 @@ import alertService from './src/services/alert/AlertService';
 import languageModelService from './src/services/ai/LanguageModelService';
 
 // アイコン
-import nordicIcons from './src/utils/nordicIcons';
+import { NordicIcon, nordicIconsXml } from './src/utils/nordicIcons';
 
 // コンポーネント
 import Dashboard from './src/components/dashboard/Dashboard';
@@ -107,7 +108,7 @@ const App: React.FC = () => {
     return (
       <SafeAreaView style={styles.errorContainer}>
         <View style={styles.errorContent}>
-          <SvgXml xml={nordicIcons.alert} width={48} height={48} color={nordicTheme.colors.state.error} />
+          <NordicIcon.Alert width={48} height={48} color={nordicTheme.custom.colors.state.error} />
           <View style={styles.errorTextContainer}>
             <Text style={styles.errorTitle}>初期化エラー</Text>
             <Text style={styles.errorMessage}>{initError}</Text>
@@ -132,23 +133,32 @@ const App: React.FC = () => {
             <Tab.Navigator
               screenOptions={({ route }) => ({
                 tabBarIcon: ({ focused, color, size }) => {
-                  let iconXml;
-
                   if (route.name === 'ダッシュボード') {
-                    iconXml = focused ? nordicIcons.dashboard : nordicIcons.dashboardOutline;
+                    return focused 
+                      ? <NordicIcon.Dashboard width={size} height={size} color={color} />
+                      : <NordicIcon.DashboardOutline width={size} height={size} color={color} />;
                   } else if (route.name === 'トランザクション') {
-                    iconXml = focused ? nordicIcons.transaction : nordicIcons.transactionOutline;
+                    return focused 
+                      ? <NordicIcon.Transaction width={size} height={size} color={color} />
+                      : <NordicIcon.TransactionOutline width={size} height={size} color={color} />;
                   } else if (route.name === '意図設定') {
-                    iconXml = focused ? nordicIcons.intent : nordicIcons.intentOutline;
+                    return focused 
+                      ? <NordicIcon.Intent width={size} height={size} color={color} />
+                      : <NordicIcon.IntentOutline width={size} height={size} color={color} />;
                   } else if (route.name === 'トークン評価') {
-                    iconXml = focused ? nordicIcons.token : nordicIcons.tokenOutline;
+                    return focused 
+                      ? <NordicIcon.Token width={size} height={size} color={color} />
+                      : <NordicIcon.TokenOutline width={size} height={size} color={color} />;
                   } else if (route.name === '設定') {
-                    iconXml = focused ? nordicIcons.settings : nordicIcons.settingsOutline;
+                    return focused 
+                      ? <NordicIcon.Settings width={size} height={size} color={color} />
+                      : <NordicIcon.SettingsOutline width={size} height={size} color={color} />;
                   }
-
-                  return <SvgXml xml={iconXml} width={size} height={size} color={color} />;
+                  
+                  // デフォルトアイコン
+                  return <NordicIcon.Dashboard width={size} height={size} color={color} />;
                 },
-                tabBarActiveTintColor: nordicTheme.colors.primary.main,
+                tabBarActiveTintColor: nordicTheme.custom.colors.primary.main,
                 tabBarInactiveTintColor: nordicTheme.custom.colors.text.secondary,
                 tabBarStyle: {
                   backgroundColor: nordicTheme.custom.colors.background.paper,
@@ -214,7 +224,7 @@ const styles = StyleSheet.create({
   errorTitle: {
     fontSize: nordicTheme.custom.fontSizes.lg,
     fontWeight: 'bold',
-    color: nordicTheme.colors.state.error,
+    color: nordicTheme.custom.colors.state.error,
     marginBottom: nordicTheme.custom.spacing.xs,
   },
   errorMessage: {

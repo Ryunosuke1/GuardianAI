@@ -1,7 +1,8 @@
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React from 'react';
+import { SvgXml } from 'react-native-svg';
 
 // Nordic風のSVGアイコン定義
-const nordicIcons = {
+const nordicIconsData = {
   dashboard: `
     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
       <rect x="3" y="3" width="7" height="9" rx="1" stroke="currentColor" stroke-width="2"/>
@@ -79,6 +80,28 @@ const nordicIcons = {
   `
 };
 
-export const NordicIcon = MaterialCommunityIcons;
+// SVGアイコンコンポーネントを作成する関数
+const createSvgIcon = (xml: string, props: any) => {
+  const { width = 24, height = 24, color = 'currentColor', ...rest } = props;
+  return <SvgXml xml={xml} width={width} height={height} color={color} {...rest} />;
+};
 
-export default NordicIcon;
+// Nordic風のアイコンコンポーネント
+export const NordicIcon = {
+  Dashboard: (props: any) => createSvgIcon(nordicIconsData.dashboard, props),
+  DashboardOutline: (props: any) => createSvgIcon(nordicIconsData.dashboardOutline, props),
+  Transaction: (props: any) => createSvgIcon(nordicIconsData.transaction, props),
+  TransactionOutline: (props: any) => createSvgIcon(nordicIconsData.transactionOutline, props),
+  Intent: (props: any) => createSvgIcon(nordicIconsData.intent, props),
+  IntentOutline: (props: any) => createSvgIcon(nordicIconsData.intentOutline, props),
+  Token: (props: any) => createSvgIcon(nordicIconsData.token, props),
+  TokenOutline: (props: any) => createSvgIcon(nordicIconsData.tokenOutline, props),
+  Settings: (props: any) => createSvgIcon(nordicIconsData.settings, props),
+  SettingsOutline: (props: any) => createSvgIcon(nordicIconsData.settingsOutline, props),
+  Alert: (props: any) => createSvgIcon(nordicIconsData.alert, props),
+};
+
+// SVG XML文字列をそのまま使用したい場合のエクスポート
+export const nordicIconsXml = nordicIconsData;
+
+export default nordicIconsXml;

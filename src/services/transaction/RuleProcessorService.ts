@@ -350,7 +350,9 @@ class RuleProcessorService {
     transaction: TransactionData,
     condition: RuleCondition
   ): { isMatch: boolean; details: string } {
-    switch (condition.type) {
+    const { type, operator, value } = condition;
+    
+    switch (type) {
       case RuleConditionType.TRANSACTION_TYPE:
         return this.evaluateTransactionType(transaction, condition);
       
@@ -372,7 +374,7 @@ class RuleProcessorService {
       default:
         return {
           isMatch: false,
-          details: `未知の条件タイプ: ${condition.type}`
+          details: `未対応の条件タイプ: ${type}`
         };
     }
   }
@@ -385,32 +387,33 @@ class RuleProcessorService {
     condition: RuleCondition
   ): { isMatch: boolean; details: string } {
     const { operator, value } = condition;
+    const txType = transaction.type || TransactionType.UNKNOWN;
     
     switch (operator) {
       case RuleOperator.EQUALS:
         return {
-          isMatch: transaction.type === value,
-          details: `トランザクションタイプ ${transaction.type} は ${value} ${transaction.type === value ? 'に一致' : 'に一致しない'}`
+          isMatch: txType === value,
+          details: `トランザクションタイプ ${txType} は ${value} ${txType === value ? 'に一致' : 'に一致しない'}`
         };
       
       case RuleOperator.NOT_EQUALS:
         return {
-          isMatch: transaction.type !== value,
-          details: `トランザクションタイプ ${transaction.type} は ${value} ${transaction.type !== value ? 'に一致しない' : 'に一致'}`
+          isMatch: txType !== value,
+          details: `トランザクションタイプ ${txType} は ${value} ${txType !== value ? 'に一致しない' : 'に一致'}`
         };
       
       case RuleOperator.IN:
         const inValues = Array.isArray(value) ? value : [value];
         return {
-          isMatch: inValues.includes(transaction.type),
-          details: `トランザクションタイプ ${transaction.type} は [${inValues.join(', ')}] ${inValues.includes(transaction.type) ? 'に含まれる' : 'に含まれない'}`
+          isMatch: inValues.includes(txType),
+          details: `トランザクションタイプ ${txType} は [${inValues.join(', ')}] ${inValues.includes(txType) ? 'に含まれる' : 'に含まれない'}`
         };
       
       case RuleOperator.NOT_IN:
         const notInValues = Array.isArray(value) ? value : [value];
         return {
-          isMatch: !notInValues.includes(transaction.type),
-          details: `トランザクションタイプ ${transaction.type} は [${notInValues.join(', ')}] ${!notInValues.includes(transaction.type) ? 'に含まれない' : 'に含まれる'}`
+          isMatch: !notInValues.includes(txType),
+          details: `トランザクションタイプ ${txType} は [${notInValues.join(', ')}] ${!notInValues.includes(txType) ? 'に含まれない' : 'に含まれる'}`
         };
       
       default:
@@ -430,16 +433,25 @@ class RuleProcessorService {
   ): { isMatch: boolean; details: string } {
     const { operator, value } = condition;
     
-    // トークンアドレスを取得（トランザクションのto、またはデコードされたデータから）
-    let tokenAddress = transaction.to.toLowerCase();
-    if (transaction.decodedData && transaction.decodedData.args && transaction.decodedData.args.length > 0) {
-      // スワップの場合はパスの最初と最後のトークンを考慮
-      if (transaction.type === TransactionType.SWAP && transaction.decodedData.args.path) {
-        const path = transaction.decodedData.args.path;
-        if (Array.isArray(path) && path.length >= 2) {
-          tokenAddress = `${path[0].toLowerCase()},${path[path.length - 1].toLowerCase()}`;
-        }
+    // トークンアドレスの抽出（デコードされたデータから）
+    let tokenAddress = '';
+    if (transaction.decodedData && transaction.decodedData.args) {
+      // トークン転送の場合
+      if (transaction.decodedData.method.toLowerCase().includes('transfer')) {
+        tokenAddress = transaction.to.toLowerCase();
       }
+      // スワップの場合
+      else if (transaction.decodedData.method.toLowerCase().includes('swap') && transaction.decodedData.args.path) {
+        // パスの最初のトークン（入力トークン）
+        tokenAddress = transaction.decodedData.args.path[0].toLowerCase();
+      }
+    }
+    
+    if (!tokenAddress) {
+      return {
+        isMatch: false,
+        details: 'トークンアドレスを特定できません'
+      };
     }
     
     switch (operator) {
@@ -457,27 +469,13 @@ class RuleProcessorService {
           details: `トークンアドレス ${tokenAddress} は ${notEqualsValue} ${tokenAddress !== notEqualsValue ? 'に一致しない' : 'に一致'}`
         };
       
-      case RuleOperator.CONTAINS:
-        const containsValue = value.toLowerCase();
-        return {
-          isMatch: tokenAddress.includes(containsValue),
-          details: `トークンアドレス ${tokenAddress} は ${containsValue} ${tokenAddress.includes(containsValue) ? 'を含む' : 'を含まない'}`
-        };
-      
-      case RuleOperator.NOT_CONTAINS:
-        const notContainsValue = value.toLowerCase();
-        return {
-          isMatch: !tokenAddress.includes(notContainsValue),
-          details: `トークンアドレス ${tokenAddress} は ${notContainsValue} ${!tokenAddress.includes(notContainsValue) ? 'を含まない' : 'を含む'}`
-        };
-      
       case RuleOperator.IN:
-        const inValues = Array.isArray(value) 
+        const inValues = Array.isArray(value)
           ? value.map((v: string) => v.toLowerCase())
           : [value.toLowerCase()];
         return {
-          isMatch: inValues.some(v => tokenAddress.includes(v)),
-          details: `トークンアドレス ${tokenAddress} は [${inValues.join(', ')}] ${inValues.some(v => tokenAddress.includes(v)) ? 'のいずれかを含む' : 'のいずれも含まない'}`
+          isMatch: inValues.includes(tokenAddress),
+          details: `トークンアドレス ${tokenAddress} は [${inValues.join(', ')}] ${inValues.includes(tokenAddress) ? 'に含まれる' : 'に含まれない'}`
         };
       
       case RuleOperator.NOT_IN:
@@ -485,8 +483,8 @@ class RuleProcessorService {
           ? value.map((v: string) => v.toLowerCase())
           : [value.toLowerCase()];
         return {
-          isMatch: !notInValues.some(v => tokenAddress.includes(v)),
-          details: `トークンアドレス ${tokenAddress} は [${notInValues.join(', ')}] ${!notInValues.some(v => tokenAddress.includes(v)) ? 'のいずれも含まない' : 'のいずれかを含む'}`
+          isMatch: !notInValues.includes(tokenAddress),
+          details: `トークンアドレス ${tokenAddress} は [${notInValues.join(', ')}] ${!notInValues.includes(tokenAddress) ? 'に含まれない' : 'に含まれる'}`
         };
       
       default:
@@ -547,7 +545,6 @@ class RuleProcessorService {
         };
     }
   }
-
   /**
    * 取引金額を評価
    */
@@ -590,83 +587,74 @@ class RuleProcessorService {
         };
     }
   }
-
   /**
    * ガス代を評価
-   */
-  private evaluateGasThreshold(
-    transaction: TransactionData,
-    condition: RuleCondition
-  ): { isMatch: boolean; details: string } {
-    const { operator, value } = condition;
-    const gasPrice = parseFloat(ethers.formatUnits(transaction.gasPrice || '0', 'gwei'));
-    const gasLimit = transaction.gasLimit ? parseFloat(transaction.gasLimit.toString()) : 0;
-    const estimatedGasCost = gasPrice * gasLimit;
-
-    switch (operator) {
-      case RuleOperator.EQUALS:
-        return {
-          isMatch: estimatedGasCost === value,
-          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost === value ? 'に等しい' : 'に等しくない'}`
-        };
-
-      case RuleOperator.NOT_EQUALS:
-        return {
-          isMatch: estimatedGasCost !== value,
-          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost !== value ? 'に等しくない' : 'に等しい'}`
-        };
-
-      case RuleOperator.GREATER_THAN:
-        return {
-          isMatch: estimatedGasCost > value,
-          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost > value ? 'より大きい' : 'より大きくない'}`
-        };
-
-      case RuleOperator.LESS_THAN:
-        return {
-          isMatch: estimatedGasCost < value,
-          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost < value ? 'より小さい' : 'より小さくない'}`
-        };
-
-      default:
-        return {
-          isMatch: false,
-          details: `ガスコストに対して未対応の演算子: ${operator}`
-        };
-    }
-  }
-
-  /**
-   * カスタム条件を評価
-   */
-  private evaluateCustomCondition(
-    transaction: TransactionData,
-    condition: RuleCondition
-  ): { isMatch: boolean; details: string } {
-    try {
-      const { value } = condition;
-      if (typeof value !== 'function') {
-        return {
-          isMatch: false,
-          details: 'カスタム条件の値は関数である必要があります'
-        };
-      }
-
-      const result = value(transaction);
+  */
+ private evaluateGasThreshold(
+  transaction: TransactionData,
+  condition: RuleCondition
+): { isMatch: boolean; details: string } {
+  const { operator, value } = condition;
+  const gasPrice = parseFloat(ethers.formatUnits(transaction.gasPrice || '0', 'gwei'));
+  const gasLimit = transaction.gasLimit ? parseFloat(transaction.gasLimit.toString()) : 0;
+  const estimatedGasCost = gasPrice * gasLimit;
+  switch (operator) {
+    case RuleOperator.EQUALS:
       return {
-        isMatch: Boolean(result),
-        details: `カスタム条件の評価結果: ${result}`
+        isMatch: estimatedGasCost === value,
+        details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost === value ? 'に等しい' : 'に等しくない'}`
       };
-    } catch (error: any) {
-      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+    case RuleOperator.NOT_EQUALS:
+      return {
+        isMatch: estimatedGasCost !== value,
+        details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost !== value ? 'に等しくない' : 'に等しい'}`
+      };
+    case RuleOperator.GREATER_THAN:
+      return {
+        isMatch: estimatedGasCost > value,
+        details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost > value ? 'より大きい' : 'より大きくない'}`
+      };
+    case RuleOperator.LESS_THAN:
+      return {
+        isMatch: estimatedGasCost < value,
+        details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost < value ? 'より小さい' : 'より小さくない'}`
+      };
+    default:
       return {
         isMatch: false,
-        details: `カスタム条件の評価中にエラーが発生: ${errorMessage}`
+        details: `ガスコストに対して未対応の演算子: ${operator}`
       };
-    }
   }
 }
-
+/**
+ * カスタム条件を評価
+ */
+private evaluateCustomCondition(
+  transaction: TransactionData,
+  condition: RuleCondition
+): { isMatch: boolean; details: string } {
+  try {
+    const { value } = condition;
+    if (typeof value !== 'function') {
+      return {
+        isMatch: false,
+        details: 'カスタム条件の値は関数である必要があります'
+      };
+    }
+    const result = value(transaction);
+    return {
+      isMatch: Boolean(result),
+      details: `カスタム条件の評価結果: ${result}`
+    };
+  } catch (error: any) {
+    const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+    return {
+      isMatch: false,
+      details: `カスタム条件の評価中にエラーが発生: ${errorMessage}`
+    };
+  }
+}
+}
 // シングルトンインスタンスを作成
 const ruleProcessorService = new RuleProcessorService();
 export default ruleProcessorService;

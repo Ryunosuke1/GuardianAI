@@ -1,49 +1,44 @@
+import { EventEmitter } from 'events';
 import { ethers } from 'ethers';
-import EventEmitter from 'events';
-import { TransactionType, TransactionData, TransactionAnalysisResult } from '../../types/transaction';
-import * as ruleProcessorService from './RuleProcessorService';
-import transactionApprovalService from './TransactionApprovalService';
+import metaMaskService from '../metamask/MetaMaskService';
+import { TransactionType, TransactionData } from '../../types/transaction';
+
+// 既知のコントラクト情報
+interface ContractInfo {
+  name: string;
+  abi: string[];
+}
 
 /**
  * トランザクション監視サービス
  * ブロックチェーン上のトランザクションを監視し、分析します
  */
 class TransactionMonitorService extends EventEmitter {
-  private provider: ethers.JsonRpcProvider | null = null;
-  private signer: ethers.JsonRpcSigner | null = null;
+  private provider: ethers.Provider | null = null;
   private isMonitoring: boolean = false;
   private pendingTransactions: Map<string, TransactionData> = new Map();
   private confirmedTransactions: Map<string, TransactionData> = new Map();
-  private knownContracts: Map<string, { name: string; abi: string[] }> = new Map();
-  private watchedAddresses: Set<string> = new Set();
+  private knownContracts: Map<string, ContractInfo> = new Map();
+  private monitoredAddresses: Set<string> = new Set();
   private blockSubscription: any = null;
-  private pendingSubscription: any = null;
-  private lastProcessedBlock: number = 0;
-  private processingQueue: string[] = [];
-  private isProcessing: boolean = false;
-  private maxQueueSize: number = 100;
-  private retryAttempts: Map<string, number> = new Map();
-  private maxRetryAttempts: number = 3;
-  private processingInterval: NodeJS.Timeout | null = null;
-  private pollingInterval: number = 5000; // 5秒ごとにポーリング
+  private pendingTxSubscription: any = null;
 
   /**
-   * コンストラクタ
-   */
-  constructor() {
-    super();
-    this.registerKnownContracts();
-  }
-
-  /**
-   * サービスを初期化します
+   * 監視サービスを初期化
    */
   public async initialize(): Promise<boolean> {
     try {
-      // 既知のコントラクトを登録
+      // MetaMaskサービスからプロバイダーを取得
+      const ethereum = metaMaskService.getProvider();
+      if (!ethereum) {
+        throw new Error('MetaMaskプロバイダーが利用できません');
+      }
+      
+      this.provider = new ethers.BrowserProvider(ethereum);
+      
+      // 既知のコントラクト情報を登録
       this.registerKnownContracts();
       
-      // 初期化成功
       return true;
     } catch (error) {
       console.error('トランザクション監視サービスの初期化に失敗しました:', error);
@@ -52,301 +47,310 @@ class TransactionMonitorService extends EventEmitter {
   }
 
   /**
-   * プロバイダーとサイナーを設定します
-   * @param provider ethersプロバイダー
-   * @param signer ethersサイナー
-   */
-  public setProviderAndSigner(provider: ethers.JsonRpcProvider, signer: ethers.JsonRpcSigner): void {
-    this.provider = provider;
-    this.signer = signer;
-    
-    // 監視中の場合は再起動
-    if (this.isMonitoring) {
-      this.stopMonitoring();
-      this.startMonitoring();
-    }
-  }
-
-  /**
-   * 監視するアドレスを追加します
-   * @param address 監視するアドレス
-   */
-  public addWatchedAddress(address: string): void {
-    this.watchedAddresses.add(address.toLowerCase());
-  }
-
-  /**
-   * 監視するアドレスを削除します
-   * @param address 監視を停止するアドレス
-   */
-  public removeWatchedAddress(address: string): void {
-    this.watchedAddresses.delete(address.toLowerCase());
-  }
-
-  /**
-   * 監視するアドレスをすべて取得します
-   */
-  public getWatchedAddresses(): string[] {
-    return Array.from(this.watchedAddresses);
-  }
-
-  /**
-   * トランザクション監視を開始します
+   * 監視を開始
    */
   public async startMonitoring(): Promise<boolean> {
     if (this.isMonitoring) {
       return true;
     }
-
-    if (!this.provider) {
-      console.error('プロバイダーが設定されていません');
-      return false;
-    }
-
+    
     try {
-      // 最新のブロック番号を取得
-      const latestBlock = await this.provider.getBlockNumber();
-      this.lastProcessedBlock = latestBlock;
-      
-      // 監視フラグを設定
-      this.isMonitoring = true;
-      
-      // WebSocketプロバイダーの場合はイベントサブスクリプションを使用
-      // ethers v6ではconnectionプロパティが異なる方法でアクセスする必要があるため修正
-      if (this.provider instanceof ethers.WebSocketProvider ||
-          (this.provider as any)._websocket) {
-        
-        // 新しいブロックのサブスクリプション
-        this.blockSubscription = this.provider.on('block', (blockNumber) => {
-          this.handleNewBlock(blockNumber);
-        });
-        
-        // 保留中のトランザクションのサブスクリプション
-        this.pendingSubscription = this.provider.on('pending', (txHash) => {
-          this.queueTransaction(txHash);
-        });
-      } else {
-        // HTTPプロバイダーの場合はポーリングを使用
-        this.processingInterval = setInterval(async () => {
-          try {
-            const currentBlock = await this.provider?.getBlockNumber();
-            if (currentBlock && currentBlock > this.lastProcessedBlock) {
-              for (let i = this.lastProcessedBlock + 1; i <= currentBlock; i++) {
-                await this.handleNewBlock(i);
-              }
-              this.lastProcessedBlock = currentBlock;
-            }
-          } catch (error) {
-            console.error('ブロックポーリング中にエラーが発生しました:', error);
-          }
-        }, this.pollingInterval);
+      if (!this.provider) {
+        await this.initialize();
+        if (!this.provider) {
+          throw new Error('プロバイダーが初期化されていません');
+        }
       }
       
-      // 処理キューの処理を開始
-      this.startProcessingQueue();
+      // 新しいブロックを監視
+      this.blockSubscription = this.provider.on('block', (blockNumber: number) => {
+        this.handleNewBlock(blockNumber);
+      });
+      
+      // 保留中のトランザクションを監視
+      this.pendingTxSubscription = this.provider.on('pending', (txHash: string) => {
+        this.handlePendingTransaction(txHash);
+      });
+      
+      this.isMonitoring = true;
+      this.emit('monitoring_started');
       
       return true;
     } catch (error) {
-      console.error('トランザクション監視の開始に失敗しました:', error);
-      this.isMonitoring = false;
+      console.error('監視の開始に失敗しました:', error);
       return false;
     }
   }
 
   /**
-   * トランザクション監視を停止します
+   * 監視を停止
    */
-  public stopMonitoring(): void {
-    // 監視フラグをリセット
-    this.isMonitoring = false;
-    
-    // サブスクリプションを解除
-    if (this.blockSubscription) {
-      this.provider?.off('block', this.blockSubscription);
-      this.blockSubscription = null;
+  public stopMonitoring(): boolean {
+    if (!this.isMonitoring) {
+      return true;
     }
     
-    if (this.pendingSubscription) {
-      this.provider?.off('pending', this.pendingSubscription);
-      this.pendingSubscription = null;
+    try {
+      // イベントリスナーを削除
+      if (this.blockSubscription) {
+        this.provider?.off('block', this.blockSubscription);
+        this.blockSubscription = null;
+      }
+      
+      if (this.pendingTxSubscription) {
+        this.provider?.off('pending', this.pendingTxSubscription);
+        this.pendingTxSubscription = null;
+      }
+      
+      this.isMonitoring = false;
+      this.emit('monitoring_stopped');
+      
+      return true;
+    } catch (error) {
+      console.error('監視の停止に失敗しました:', error);
+      return false;
     }
-    
-    // ポーリングを停止
-    if (this.processingInterval) {
-      clearInterval(this.processingInterval);
-      this.processingInterval = null;
-    }
-    
-    // 処理キューをクリア
-    this.processingQueue = [];
-    this.isProcessing = false;
   }
 
   /**
-   * 監視状態を取得します
+   * 監視するアドレスを追加
+   * @param address 監視するアドレス
    */
-  public isMonitoringActive(): boolean {
-    return this.isMonitoring;
+  public addMonitoredAddress(address: string): boolean {
+    try {
+      const normalizedAddress = address.toLowerCase();
+      this.monitoredAddresses.add(normalizedAddress);
+      this.emit('address_added', normalizedAddress);
+      return true;
+    } catch (error) {
+      console.error('アドレスの追加に失敗しました:', error);
+      return false;
+    }
   }
 
   /**
-   * トランザクションを分析します
-   * @param txData トランザクションデータ
+   * 監視するアドレスを削除
+   * @param address 削除するアドレス
    */
-  private async analyzeTransaction(txData: TransactionData): Promise<TransactionData> {
+  public removeMonitoredAddress(address: string): boolean {
+    try {
+      const normalizedAddress = address.toLowerCase();
+      const result = this.monitoredAddresses.delete(normalizedAddress);
+      if (result) {
+        this.emit('address_removed', normalizedAddress);
+      }
+      return result;
+    } catch (error) {
+      console.error('アドレスの削除に失敗しました:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 監視中のアドレス一覧を取得
+   */
+  public getMonitoredAddresses(): string[] {
+    return Array.from(this.monitoredAddresses);
+  }
+
+  /**
+   * 保留中のトランザクションを取得
+   */
+  public getPendingTransactions(): TransactionData[] {
+    return Array.from(this.pendingTransactions.values());
+  }
+
+  /**
+   * 特定のアドレスに関連する保留中のトランザクションを取得
+   * @param address 対象のアドレス
+   */
+  public getPendingTransactionsByAddress(address: string): TransactionData[] {
+    const lowerAddress = address.toLowerCase();
+    return this.getPendingTransactions().filter(tx => 
+      tx.from.toLowerCase() === lowerAddress || 
+      tx.to.toLowerCase() === lowerAddress
+    );
+  }
+
+  /**
+   * トランザクションを分析
+   * @param transaction トランザクションデータ
+   */
+  public async analyzeTransaction(transaction: TransactionData): Promise<TransactionData> {
     try {
       // トランザクションタイプを判定
-      let txType = TransactionType.UNKNOWN;
+      const txType = this.determineTransactionType(transaction);
       
-      // コントラクト呼び出しの場合
-      if (txData.to && txData.data && txData.data !== '0x') {
-        const lowerTo = txData.to.toLowerCase();
-        
-        // 既知のコントラクトかチェック
-        if (this.knownContracts.has(lowerTo)) {
-          const contract = this.knownContracts.get(lowerTo);
-          if (contract) {
-            // コントラクトのABIを使用して関数を解析
-            const iface = new ethers.Interface(contract.abi);
-            try {
-              const decoded = iface.parseTransaction({ data: txData.data, value: txData.value });
-              if (decoded) {
-                // 関数名に基づいてトランザクションタイプを設定
-                const functionName = decoded.name.toLowerCase();
-                
-                if (functionName.includes('swap')) {
-                  txType = TransactionType.SWAP;
-                } else if (functionName.includes('transfer')) {
-                  txType = TransactionType.TRANSFER;
-                } else if (functionName.includes('approve')) {
-                  txType = TransactionType.APPROVAL;
-                } else if (functionName.includes('mint')) {
-                  txType = TransactionType.MINT;
-                } else if (functionName.includes('burn')) {
-                  txType = TransactionType.BURN;
-                } else if (functionName.includes('stake')) {
-                  txType = TransactionType.STAKE;
-                } else if (functionName.includes('unstake') || functionName.includes('withdraw')) {
-                  txType = TransactionType.UNSTAKE;
-                } else if (functionName.includes('claim') || functionName.includes('reward')) {
-                  txType = TransactionType.CLAIM;
-                } else {
-                  txType = TransactionType.CONTRACT_INTERACTION;
-                }
-              }
-            } catch (error) {
-              console.warn('トランザクションの解析に失敗しました:', error);
-              txType = TransactionType.CONTRACT_INTERACTION;
-            }
-          }
-        } else {
-          txType = TransactionType.CONTRACT_INTERACTION;
-        }
-      } else if (txData.value && txData.value !== '0x0' && txData.value !== '0') {
-        // 単純な送金の場合
-        txType = TransactionType.TRANSFER;
-      }
+      // トランザクションデータをデコード
+      const decodedData = await this.decodeTransactionData(transaction);
       
-      // 更新されたトランザクションデータ
-      const updatedTxData: TransactionData = {
-        ...txData,
+      // 分析結果を返す
+      return {
+        ...transaction,
         type: txType,
+        decodedData
       };
-      
-      // ルールプロセッサーでトランザクションを分析
-      const analysisResult: TransactionAnalysisResult = {
-        requiresApproval: false,
-        riskLevel: 'LOW',
-        warnings: []
-      };
+    } catch (error) {
+      console.error('トランザクション分析に失敗しました:', error);
+      return transaction;
+    }
+  }
 
-      // 分析結果に基づいてアクションを実行
-      if (analysisResult.requiresApproval) {
-        // 承認が必要な場合は承認サービスに追加
-        transactionApprovalService.addTransactionForApproval(updatedTxData);
+  /**
+   * トランザクションタイプを判定
+   * @param transaction トランザクションデータ
+   */
+  private determineTransactionType(transaction: TransactionData): TransactionType {
+    // コントラクトアドレスへのトランザクション
+    if (transaction.to) {
+      const lowerTo = transaction.to.toLowerCase();
+      
+      // 既知のコントラクトかチェック
+      if (this.knownContracts.has(lowerTo)) {
+        const contractInfo = this.knownContracts.get(lowerTo);
+        
+        // Uniswapルーターの場合
+        if (contractInfo?.name.includes('Uniswap') || contractInfo?.name.includes('Sushiswap')) {
+          return TransactionType.SWAP;
+        }
+        
+        // ERC20トークンの場合
+        if (transaction.data && transaction.data.startsWith('0xa9059cbb')) {
+          return TransactionType.TRANSFER;
+        }
       }
       
-      return updatedTxData;
-    } catch (error) {
-      console.error('トランザクション分析中にエラーが発生しました:', error);
-      return txData;
+      // データフィールドがある場合はコントラクト呼び出し
+      if (transaction.data && transaction.data !== '0x') {
+        // データフィールドの最初の4バイトはメソッドシグネチャ
+        const methodSig = transaction.data.slice(0, 10);
+        
+        // 一般的なERC20転送メソッドシグネチャ
+        if (methodSig === '0xa9059cbb') {
+          return TransactionType.TRANSFER;
+        }
+        
+        // 一般的なERC20承認メソッドシグネチャ
+        if (methodSig === '0x095ea7b3') {
+          return TransactionType.APPROVAL;
+        }
+        
+        // その他のコントラクト呼び出し
+        return TransactionType.CONTRACT_INTERACTION;
+      }
     }
+    
+    // ETH転送（データフィールドなし）
+    if (!transaction.data || transaction.data === '0x') {
+      return TransactionType.ETH_TRANSFER;
+    }
+    
+    // 不明なタイプ
+    return TransactionType.UNKNOWN;
   }
 
   /**
-   * トランザクションをキューに追加します
-   * @param txHash トランザクションハッシュ
+   * トランザクションデータをデコード
+   * @param transaction トランザクションデータ
    */
-  private queueTransaction(txHash: string): void {
-    // キューが最大サイズに達している場合は古いものを削除
-    if (this.processingQueue.length >= this.maxQueueSize) {
-      this.processingQueue.shift();
-    }
-    
-    // キューに追加
-    this.processingQueue.push(txHash);
-  }
-
-  /**
-   * 処理キューの処理を開始します
-   */
-  private async startProcessingQueue(): Promise<void> {
-    if (this.isProcessing) {
-      return;
-    }
-    
-    this.isProcessing = true;
-    
-    while (this.isMonitoring && this.processingQueue.length > 0) {
-      const txHash = this.processingQueue.shift();
-      if (txHash) {
-        try {
-          await this.processPendingTransaction(txHash);
-        } catch (error) {
-          // リトライカウントを増やす
-          const retryCount = (this.retryAttempts.get(txHash) || 0) + 1;
-          this.retryAttempts.set(txHash, retryCount);
+  private async decodeTransactionData(transaction: TransactionData): Promise<any> {
+    try {
+      if (!transaction.data || transaction.data === '0x') {
+        return null;
+      }
+      
+      // コントラクトアドレスが既知かチェック
+      if (transaction.to && this.knownContracts.has(transaction.to.toLowerCase())) {
+        const contractInfo = this.knownContracts.get(transaction.to.toLowerCase());
+        if (contractInfo) {
+          // インターフェースを作成
+          const iface = new ethers.Interface(contractInfo.abi);
           
-          // 最大リトライ回数に達していない場合は再キュー
-          if (retryCount < this.maxRetryAttempts) {
-            this.queueTransaction(txHash);
-          } else {
-            console.error(`トランザクション ${txHash} の処理に失敗しました (${retryCount}回目):`, error);
-            this.retryAttempts.delete(txHash);
+          try {
+            // データをデコード
+            const decoded = iface.parseTransaction({ data: transaction.data, value: transaction.value });
+            if (decoded) {
+              return {
+                method: decoded.name,
+                args: decoded.args
+              };
+            }
+          } catch (error) {
+            console.warn('トランザクションデータのデコードに失敗しました:', error);
           }
         }
       }
       
-      // 非同期処理の間に少し待機して他の処理を妨げないようにする
-      await new Promise(resolve => setTimeout(resolve, 10));
+      // 一般的なERC20メソッドのデコード
+      if (transaction.data.startsWith('0xa9059cbb')) {
+        // transfer(address,uint256)
+        const iface = new ethers.Interface([
+          'function transfer(address to, uint256 value) returns (bool)'
+        ]);
+        
+        try {
+          const decoded = iface.parseTransaction({ data: transaction.data, value: transaction.value });
+          if (decoded) {
+            return {
+              method: 'transfer',
+              args: decoded.args
+            };
+          }
+        } catch (error) {
+          console.warn('ERC20転送データのデコードに失敗しました:', error);
+        }
+      }
+      
+      if (transaction.data.startsWith('0x095ea7b3')) {
+        // approve(address,uint256)
+        const iface = new ethers.Interface([
+          'function approve(address spender, uint256 value) returns (bool)'
+        ]);
+        
+        try {
+          const decoded = iface.parseTransaction({ data: transaction.data, value: transaction.value });
+          if (decoded) {
+            return {
+              method: 'approve',
+              args: decoded.args
+            };
+          }
+        } catch (error) {
+          console.warn('ERC20承認データのデコードに失敗しました:', error);
+        }
+      }
+      
+      // デコードできない場合はnullを返す
+      return null;
+    } catch (error) {
+      console.error('トランザクションデータのデコードに失敗しました:', error);
+      return null;
     }
-    
-    this.isProcessing = false;
   }
 
   /**
-   * 保留中のトランザクションを処理します
+   * 保留中のトランザクションを処理
    * @param txHash トランザクションハッシュ
    */
-  private async processPendingTransaction(txHash: string): Promise<void> {
+  private async handlePendingTransaction(txHash: string): Promise<void> {
     try {
-      if (!this.provider) {
-        throw new Error('プロバイダーが設定されていません');
+      // 既に処理済みかチェック
+      if (this.pendingTransactions.has(txHash) || this.confirmedTransactions.has(txHash)) {
+        return;
       }
       
       // トランザクション情報を取得
-      const tx = await this.provider.getTransaction(txHash);
+      const tx = await this.provider?.getTransaction(txHash);
       if (!tx) {
         return;
       }
       
       // 監視対象のアドレスに関連するトランザクションかチェック
-      const from = tx.from.toLowerCase();
-      const to = tx.to ? tx.to.toLowerCase() : '';
-      
-      if (this.watchedAddresses.size > 0 && 
-          !this.watchedAddresses.has(from) && 
-          !this.watchedAddresses.has(to)) {
+      const isRelevant = this.isRelevantTransaction(tx);
+      if (!isRelevant) {
+        return;
+      }
+      if (tx.gasLimit) {
         return;
       }
       
@@ -358,23 +362,22 @@ class TransactionMonitorService extends EventEmitter {
         value: tx.value.toString(),
         data: tx.data,
         nonce: tx.nonce,
-        gasLimit: Number(tx.gasLimit.toString()),
-        gasPrice: tx.gasPrice ? tx.gasPrice.toString() : '',
-        chainId: tx.chainId.toString(),
-        type: TransactionType.UNKNOWN,
+        gasLimit: tx.gasLimit,
+        gasPrice: tx.gasPrice?.toString(),
+        status: 'pending',
         timestamp: Date.now(),
       };
       
       // トランザクションを分析
       const analyzedTx = await this.analyzeTransaction(txData);
       
-      // 保留中のトランザクションに追加
+      // 保留中トランザクションに追加
       this.pendingTransactions.set(txHash, analyzedTx);
       
       // イベントを発火
       this.emit('pending_transaction', analyzedTx);
     } catch (error) {
-      console.error('保留中のトランザクション処理に失敗しました:', error);
+      console.error('保留中トランザクションの処理に失敗しました:', error);
     }
   }
 
@@ -390,54 +393,60 @@ class TransactionMonitorService extends EventEmitter {
         return;
       }
       
-      // ブロック内のトランザクションを処理
-      const transactions = block.transactions;
-      if (!transactions || !Array.isArray(transactions)) {
-        console.warn('ブロック内のトランザクションが見つかりませんでした', blockNumber);
-        return;
-      }
-
-      for (const tx of transactions) {
-        // トランザクションハッシュを取得
-        let txHash: string | undefined;
-        
-        if (typeof tx === 'string') {
-          // トランザクションがハッシュ文字列の場合
-          txHash = tx;
-        } else if (tx && typeof tx === 'object') {
-          // オブジェクトからハッシュを安全に抽出
-          // TypeScriptの型チェックをバイパスするためにanyキャストを使用
-          const txObj = tx as any;
-          if (txObj && typeof txObj.hash === 'string') {
-            txHash = txObj.hash;
-          }
-        }
-        
-        // ハッシュが取得できない場合はスキップ
-        if (!txHash) {
-          console.warn('トランザクションからハッシュを取得できませんでした', tx);
+      // イベントを発火
+      this.emit('new_block', {
+        number: blockNumber,
+        timestamp: block.timestamp,
+        hash: block.hash,
+      });
+      
+      // 保留中のトランザクションを確認
+      for (const [txHash, pendingTx] of this.pendingTransactions.entries()) {
+        // トランザクションレシートを取得
+        const receipt = await this.provider?.getTransactionReceipt(txHash);
+        if (!receipt) {
           continue;
         }
         
-        // 保留中のトランザクションから削除
-        const pendingTx = this.pendingTransactions.get(txHash);
-        if (pendingTx) {
-          this.pendingTransactions.delete(txHash);
-          
-          // 確認済みトランザクションに追加
-          this.confirmedTransactions.set(txHash, {
-            ...pendingTx,
-            status: 'confirmed',
-            timestamp: Date.now(),
-          });
-          
-          // イベントを発火
-          this.emit('confirmed_transaction', pendingTx);
-        }
+        // トランザクションが確認されたら保留中から削除
+        this.pendingTransactions.delete(txHash);
+        
+        // 確認済みトランザクションに追加
+        this.confirmedTransactions.set(txHash, {
+          ...pendingTx,
+          status: 'confirmed',
+          timestamp: Date.now(),
+        });
+        
+        // イベントを発火
+        this.emit('confirmed_transaction', pendingTx);
       }
     } catch (error) {
       console.error('新しいブロック処理に失敗しました:', error);
     }
+  }
+
+  /**
+   * 監視対象のトランザクションかチェック
+   * @param tx トランザクション
+   */
+  private isRelevantTransaction(tx: ethers.TransactionResponse): boolean {
+    // 監視対象のアドレスがない場合はすべてのトランザクションを監視
+    if (this.monitoredAddresses.size === 0) {
+      return true;
+    }
+    
+    // 送信元アドレスが監視対象かチェック
+    if (tx.from && this.monitoredAddresses.has(tx.from.toLowerCase())) {
+      return true;
+    }
+    
+    // 送信先アドレスが監視対象かチェック
+    if (tx.to && this.monitoredAddresses.has(tx.to.toLowerCase())) {
+      return true;
+    }
+    
+    return false;
   }
 
   /**
@@ -516,7 +525,6 @@ class TransactionMonitorService extends EventEmitter {
       abi: erc20Abi,
     });
   }
-
   /**
    * 確認済みトランザクションを取得
    * @returns 確認済みトランザクションの配列
@@ -524,7 +532,6 @@ class TransactionMonitorService extends EventEmitter {
   public getConfirmedTransactions(): TransactionData[] {
     return Array.from(this.confirmedTransactions.values());
   }
-
   /**
    * 特定のアドレスに関連する確認済みトランザクションを取得
    * @param address 対象のアドレス
@@ -538,7 +545,6 @@ class TransactionMonitorService extends EventEmitter {
     );
   }
 }
-
 // シングルトンインスタンスを作成
 const transactionMonitorService = new TransactionMonitorService();
 export default transactionMonitorService;

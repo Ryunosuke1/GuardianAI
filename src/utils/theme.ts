@@ -31,6 +31,11 @@ const customColors = {
     paper: '#FFFFFF',
     elevated: '#FFFFFF'
   },
+  border: {
+    light: '#E0E0E0',
+    medium: '#CCCCCC',
+    dark: '#999999'
+  },
   state: {
     success: '#34C759',
     warning: '#FF9500',

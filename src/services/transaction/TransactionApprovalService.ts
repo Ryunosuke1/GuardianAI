@@ -4,6 +4,7 @@ import { TransactionEvaluationResult } from './RuleProcessorService';
 import { ApprovalStatus, ApprovalRequest } from '../../types/approval';
 import ruleProcessorService from './RuleProcessorService';
 import { ethers } from 'ethers';
+import metaMaskService from '../metamask/MetaMaskService';
 
 /**
  * トランザクション承認サービス
@@ -13,6 +14,7 @@ class TransactionApprovalService extends EventEmitter {
   private approvalRequests: Map<string, ApprovalRequest> = new Map();
   private requestTimeout: number = 5 * 60 * 1000; // 5分
   private autoApproveEnabled: boolean = false;
+  private privateKey: string | null = null;
 
   /**
    * 承認サービスを初期化
@@ -41,6 +43,28 @@ class TransactionApprovalService extends EventEmitter {
    */
   public setRequestTimeout(timeoutMs: number): void {
     this.requestTimeout = timeoutMs;
+  }
+
+  /**
+   * プライベートキーを設定
+   * @param privateKey ユーザーのプライベートキー
+   */
+  public setPrivateKey(privateKey: string): void {
+    this.privateKey = privateKey;
+  }
+
+  /**
+   * プライベートキーをクリア
+   */
+  public clearPrivateKey(): void {
+    this.privateKey = null;
+  }
+
+  /**
+   * プライベートキーが設定されているか確認
+   */
+  public hasPrivateKey(): boolean {
+    return this.privateKey !== null && this.privateKey.length > 0;
   }
 
   /**
@@ -278,10 +302,26 @@ class TransactionApprovalService extends EventEmitter {
         nonce: transaction.nonce
       };
       
-      // 現在この関数はモックしています
-      // 実際のアプリケーションではMetaMaskなどのウォレット連携で送信します
-      console.log('トランザクションを送信:', tx);
-      const txHash = `0x${Math.random().toString(36).substring(2, 15)}`;
+      let txHash: string;
+      
+      // ユーザーの想定内トランザクションの場合はプライベートキーを使用
+      if (request.evaluationResult?.isApproved && this.hasPrivateKey()) {
+        // プライベートキーを使用してトランザクションを送信
+        const provider = metaMaskService.getProvider();
+        if (!provider) {
+          throw new Error('プロバイダーが利用できません');
+        }
+        
+        const wallet = new ethers.Wallet(this.privateKey!, provider);
+        const txResponse = await wallet.sendTransaction(tx);
+        txHash = txResponse.hash;
+        
+        console.log('プライベートキーを使用してトランザクションを送信:', txHash);
+      } else {
+        // MetaMask SDKを使用してトランザクションを送信
+        txHash = await metaMaskService.sendTransaction(tx);
+        console.log('MetaMask SDKを使用してトランザクションを送信:', txHash);
+      }
       
       // 送信完了イベントを発火
       this.emit('transaction_sent', {
