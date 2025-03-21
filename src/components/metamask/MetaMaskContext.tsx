@@ -16,6 +16,7 @@ interface MetaMaskContextType {
   signMessage: (message: string) => Promise<string>;
   secureStore: (key: string, value: string) => Promise<boolean>;
   secureRetrieve: (key: string) => Promise<string | null>;
+  updateChainId: (chainId: string) => void;
   error: Error | null;
 }
 
@@ -41,6 +42,7 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
   const [accounts, setAccounts] = useState<string[]>([]);
   const [error, setError] = useState<Error | null>(null);
   const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
+  const [currentChainId, setCurrentChainId] = useState<string | null>(null);
   
   // SDK初期化の監視
   useEffect(() => {
@@ -70,18 +72,28 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
     }
   }, [connected, account]);
   
-  // チェーンIDの監視
+  // チェーンIDの更新関数
+  const updateChainId = (newChainId: string) => {
+    const numChainId = parseInt(newChainId);
+    const hexChainId = `0x${numChainId.toString(16)}`;
+    setCurrentChainId(hexChainId);
+  };
+
+  // チェーンIDの変更を監視
   useEffect(() => {
     if (chainId) {
-      // 16進数形式に変換
-      const hexChainId = typeof chainId === 'number' 
-        ? `0x${chainId.toString(16)}` 
-        : chainId;
-      
-      // 状態を更新
-      setChainId(hexChainId);
+      const numChainId = parseInt(chainId);
+      const hexChainId = `0x${numChainId.toString(16)}`;
+      setCurrentChainId(hexChainId);
     }
   }, [chainId]);
+
+  // handleChainChangedの重複を削除
+  const handleChainChanged = (chainIdHex: string) => {
+    const numChainId = parseInt(chainIdHex, 16);
+    const chainIdStr = `0x${numChainId.toString(16)}`;
+    setCurrentChainId(chainIdStr);
+  };
   
   // エラーの監視
   useEffect(() => {
@@ -135,6 +147,9 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
    * MetaMaskウォレットから切断
    */
   const disconnect = async (): Promise<void> => {
+    setAccounts([]);
+    setIsConnected(false);
+    setCurrentChainId('');
     if (!isInitialized) {
       return;
     }
@@ -228,13 +243,14 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
     isConnecting,
     isConnected,
     accounts,
-    chainId,
+    chainId: currentChainId,
     connect,
     disconnect,
     sendTransaction,
     signMessage,
     secureStore,
     secureRetrieve,
+    updateChainId,
     error,
   };
   

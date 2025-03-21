@@ -1,70 +1,66 @@
 import { DefaultTheme } from 'react-native-paper';
 
-// ノルディックデザインのカラーパレット
-const colors = {
-  // プライマリカラー - 深い青（ノルウェーの海を表現）
+// カスタムカラーパレット
+const customColors = {
   primary: {
-    main: '#1E3A8A',
-    light: '#3B5CB8',
-    dark: '#0F2A6F',
-    contrast: '#FFFFFF',
+    main: '#007AFF',
+    light: '#4DA3FF',
+    dark: '#0055B3',
+    contrast: '#FFFFFF'
   },
-  // セカンダリカラー - 温かみのある赤（スカンジナビアの伝統的な赤）
   secondary: {
-    main: '#C64756',
-    light: '#E57373',
-    dark: '#9A2A3A',
-    contrast: '#FFFFFF',
+    main: '#5856D6',
+    light: '#8280E5',
+    dark: '#3634A3',
+    contrast: '#FFFFFF'
   },
-  // アクセントカラー - 森の緑（スウェーデンの森を表現）
   accent: {
-    main: '#2E7D32',
-    light: '#4CAF50',
-    dark: '#1B5E20',
-    contrast: '#FFFFFF',
+    main: '#FF2D55',
+    light: '#FF6B88',
+    dark: '#D60339',
+    contrast: '#FFFFFF'
   },
-  // 背景色 - 明るい灰色（スカンジナビアの明るい空間を表現）
-  background: {
-    default: '#F5F7FA',
-    paper: '#FFFFFF',
-    elevated: '#FFFFFF',
-  },
-  // テキスト色
   text: {
-    primary: '#263238',
-    secondary: '#546E7A',
-    disabled: '#90A4AE',
-    hint: '#78909C',
+    primary: '#000000',
+    secondary: '#666666',
+    disabled: '#999999',
+    hint: '#CCCCCC'
   },
-  // 境界線色
-  border: {
-    light: '#E1E8ED',
-    main: '#CFD8DC',
-    dark: '#B0BEC5',
+  background: {
+    default: '#F5F5F5',
+    paper: '#FFFFFF',
+    elevated: '#FFFFFF'
   },
-  // 状態色
   state: {
-    success: '#43A047',
-    warning: '#FFA000',
-    error: '#E53935',
-    info: '#1E88E5',
+    success: '#34C759',
+    warning: '#FF9500',
+    error: '#FF3B30',
+    info: '#5856D6',
+    disabled: '#C7C7CC'
   },
-  // 特殊色
-  special: {
-    dogBark: '#FFD54F', // 犬の鳴き声アラート用の色
-  },
+  transaction: {
+    transfer: '#007AFF',
+    swap: '#5856D6',
+    approval: '#FF9500',
+    mint: '#34C759',
+    burn: '#FF3B30',
+    stake: '#AF52DE',
+    unstake: '#FF2D55',
+    claim: '#30B0C7',
+    contract: '#8E8E93',
+    unknown: '#C7C7CC'
+  }
 };
 
 // フォントサイズ
 const fontSizes = {
-  xs: 10,
-  sm: 12,
-  md: 14,
-  lg: 16,
-  xl: 18,
-  xxl: 20,
-  xxxl: 24,
-  display: 32,
+  xs: 12,
+  sm: 14,
+  md: 16,
+  lg: 18,
+  xl: 20,
+  xxl: 24,
+  xxxl: 30
 };
 
 // スペーシング
@@ -73,107 +69,58 @@ const spacing = {
   sm: 8,
   md: 16,
   lg: 24,
-  xl: 32,
-  xxl: 48,
+  xl: 32
 };
 
 // 角丸
 const roundness = {
-  xs: 2,
   sm: 4,
   md: 8,
-  lg: 12,
-  xl: 16,
-  full: 9999,
+  lg: 16
 };
 
 // シャドウ
 const shadows = {
-  none: {
-    shadowColor: 'transparent',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
-  },
-  xs: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
   sm: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.18,
+    shadowRadius: 1.0,
+    elevation: 1
   },
   md: {
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  lg: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  xl: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 6,
-  },
-};
-
-// アニメーション
-const animation = {
-  scale: 1.0,
-  duration: {
-    shortest: 150,
-    shorter: 200,
-    short: 250,
-    standard: 300,
-    complex: 375,
-    enteringScreen: 225,
-    leavingScreen: 195,
-  },
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5
+  }
 };
 
 // React Native Paperテーマの拡張
 export const nordicTheme = {
   ...DefaultTheme,
-  roundness: roundness.md,
   colors: {
     ...DefaultTheme.colors,
-    primary: colors.primary.main,
-    accent: colors.accent.main,
-    background: colors.background.default,
-    surface: colors.background.paper,
-    text: colors.text.primary,
-    disabled: colors.text.disabled,
-    placeholder: colors.text.hint,
+    primary: customColors.primary.main,
+    accent: customColors.accent.main,
+    background: customColors.background.default,
+    surface: customColors.background.paper,
+    text: customColors.text.primary,
+    disabled: customColors.text.disabled,
+    placeholder: customColors.text.hint,
     backdrop: 'rgba(0, 0, 0, 0.5)',
-    notification: colors.secondary.main,
-    error: colors.state.error,
+    notification: customColors.secondary.main,
+    error: customColors.state.error
   },
   // カスタムテーマプロパティ
   custom: {
-    colors,
+    colors: customColors,
     fontSizes,
     spacing,
     roundness,
-    shadows,
-    animation,
-  },
+    shadows
+  }
 };
 
-// テーマのエクスポート
 export default nordicTheme;

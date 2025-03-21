@@ -1,4 +1,18 @@
-import { TransactionData, TransactionType } from './TransactionMonitorService';
+import { ethers } from 'ethers';
+import { TransactionType, type TransactionData as BaseTransactionData } from '../../types/transaction';
+
+interface SwapPathData {
+  path: string[];
+}
+
+interface DecodedData {
+  method: string;
+  args: any[] & Partial<SwapPathData>;
+}
+
+interface TransactionData extends BaseTransactionData {
+  decodedData?: DecodedData;
+}
 
 // ルールの条件タイプ
 export enum RuleConditionType {
@@ -566,4 +580,93 @@ class RuleProcessorService {
       case RuleOperator.LESS_THAN:
         return {
           isMatch: txValue < value,
-          details: `取引金額 ${t<response clipped><NOTE>To save on context only part of this file has been shown to you. You should retry this tool after you have searched inside the file with `grep -n` in order to find the line numbers of what you are looking for.</NOTE>
+          details: `取引金額 ${txValue} ETH は ${value} ETH ${txValue < value ? 'より小さい' : 'より小さくない'}`
+        };
+      
+      default:
+        return {
+          isMatch: false,
+          details: `取引金額に対して未対応の演算子: ${operator}`
+        };
+    }
+  }
+
+  /**
+   * ガス代を評価
+   */
+  private evaluateGasThreshold(
+    transaction: TransactionData,
+    condition: RuleCondition
+  ): { isMatch: boolean; details: string } {
+    const { operator, value } = condition;
+    const gasPrice = parseFloat(ethers.formatUnits(transaction.gasPrice || '0', 'gwei'));
+    const gasLimit = transaction.gasLimit ? parseFloat(transaction.gasLimit.toString()) : 0;
+    const estimatedGasCost = gasPrice * gasLimit;
+
+    switch (operator) {
+      case RuleOperator.EQUALS:
+        return {
+          isMatch: estimatedGasCost === value,
+          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost === value ? 'に等しい' : 'に等しくない'}`
+        };
+
+      case RuleOperator.NOT_EQUALS:
+        return {
+          isMatch: estimatedGasCost !== value,
+          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost !== value ? 'に等しくない' : 'に等しい'}`
+        };
+
+      case RuleOperator.GREATER_THAN:
+        return {
+          isMatch: estimatedGasCost > value,
+          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost > value ? 'より大きい' : 'より大きくない'}`
+        };
+
+      case RuleOperator.LESS_THAN:
+        return {
+          isMatch: estimatedGasCost < value,
+          details: `ガスコスト ${estimatedGasCost} Gwei は ${value} Gwei ${estimatedGasCost < value ? 'より小さい' : 'より小さくない'}`
+        };
+
+      default:
+        return {
+          isMatch: false,
+          details: `ガスコストに対して未対応の演算子: ${operator}`
+        };
+    }
+  }
+
+  /**
+   * カスタム条件を評価
+   */
+  private evaluateCustomCondition(
+    transaction: TransactionData,
+    condition: RuleCondition
+  ): { isMatch: boolean; details: string } {
+    try {
+      const { value } = condition;
+      if (typeof value !== 'function') {
+        return {
+          isMatch: false,
+          details: 'カスタム条件の値は関数である必要があります'
+        };
+      }
+
+      const result = value(transaction);
+      return {
+        isMatch: Boolean(result),
+        details: `カスタム条件の評価結果: ${result}`
+      };
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      return {
+        isMatch: false,
+        details: `カスタム条件の評価中にエラーが発生: ${errorMessage}`
+      };
+    }
+  }
+}
+
+// シングルトンインスタンスを作成
+const ruleProcessorService = new RuleProcessorService();
+export default ruleProcessorService;

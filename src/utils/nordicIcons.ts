@@ -1,3 +1,5 @@
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+
 // Nordic風のSVGアイコン定義
 const nordicIcons = {
   dashboard: `
@@ -77,4 +79,6 @@ const nordicIcons = {
   `
 };
 
-export default nordicIcons;
+export const NordicIcon = MaterialCommunityIcons;
+
+export default NordicIcon;

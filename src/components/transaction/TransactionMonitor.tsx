@@ -3,11 +3,11 @@ import { View, StyleSheet, ScrollView } from 'react-native';
 import { Text, Card, DataTable, Badge, IconButton, Switch } from 'react-native-paper';
 import { useMetaMask } from '../../services/metamask/MetaMaskContext';
 import transactionMonitorService from '../../services/transaction/TransactionMonitorService';
-import transactionApprovalService, { ApprovalStatus } from '../../services/transaction/TransactionApprovalService';
-import { TransactionType, TransactionData } from '../../types/transaction';
-import { TransactionApproval } from '../../types/approval';
-import { nordicTheme } from '../../utils/theme';
-import { NordicIcon } from '../../utils/nordicIcons';
+import transactionApprovalService from '../../services/transaction/TransactionApprovalService';
+import { TransactionData, TransactionType } from '@/types/transaction';
+import { ApprovalRequest, ApprovalStatus } from '@/types/approval';
+import { nordicTheme } from '@/utils/theme';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 // トランザクションタイプの色を取得
 const getTransactionTypeColor = (type: TransactionType): string => {
@@ -105,7 +105,7 @@ const shortenAddress = (address: string): string => {
 const TransactionMonitor: React.FC = () => {
   const { isConnected, accounts } = useMetaMask();
   const [isMonitoring, setIsMonitoring] = useState<boolean>(false);
-  const [pendingApprovals, setPendingApprovals] = useState<TransactionApproval[]>([]);
+  const [pendingApprovals, setPendingApprovals] = useState<ApprovalRequest[]>([]);
   const [confirmedTransactions, setConfirmedTransactions] = useState<TransactionData[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { custom, colors } = nordicTheme;
@@ -272,7 +272,7 @@ const TransactionMonitor: React.FC = () => {
                 <DataTable.Title numeric>アクション</DataTable.Title>
               </DataTable.Header>
               {pendingApprovals
-                .filter(approval => approval.status === ApprovalStatus.PENDING)
+                .filter(approval => approval.status === 'pending')
                 .map((approval, index) => (
                   <DataTable.Row key={index}>
                     <DataTable.Cell>
@@ -288,22 +288,24 @@ const TransactionMonitor: React.FC = () => {
                     <DataTable.Cell numeric>
                       <Badge
                         style={{
-                          backgroundColor: getApprovalStatusColor(approval.status),
+                          backgroundColor: custom.colors.state[approval.status === 'pending' ? 'warning' : approval.status === 'approved' ? 'success' : 'error'],
                         }}
                       >
-                        {getApprovalStatusName(approval.status)}
+                        {approval.status === 'pending' ? '保留中' : approval.status === 'approved' ? '承認済み' : '拒否済み'}
                       </Badge>
                     </DataTable.Cell>
                     <DataTable.Cell numeric>
                       <View style={styles.actionButtons}>
                         <IconButton
-                          icon={() => <NordicIcon name="check" size={20} color={colors.state.success} />}
+                          icon="check"
                           size={20}
+                          iconColor={custom.colors.state.success}
                           onPress={() => approveTransaction(approval.id)}
                         />
                         <IconButton
-                          icon={() => <NordicIcon name="close" size={20} color={colors.state.error} />}
+                          icon="close"
                           size={20}
+                          iconColor={custom.colors.state.error}
                           onPress={() => rejectTransaction(approval.id)}
                         />
                       </View>

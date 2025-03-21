@@ -1,7 +1,6 @@
 import { MetaMaskSDK } from '@metamask/sdk';
-import { Dapp } from '@metamask/sdk-react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ethers } from 'ethers';
+import { CommunicationLayerPreference } from '@metamask/sdk-communication-layer';
 
 // 開発モードフラグの定義
 const IS_DEV_MODE = process.env.NODE_ENV === 'development';
@@ -32,22 +31,17 @@ class MetaMaskService {
         dappMetadata: {
           name: 'GuardianAI',
           url: 'https://guardianai.app',
-          description: 'トランザクション監視と保護のためのAIアシスタント',
         },
         // 接続設定
         storage: {
           enabled: true,
-          // AsyncStorageをストレージとして使用
-          storageManager: AsyncStorage,
         },
-        // 通信設定
-        communicationLayerPreference: 'webrtc',
+        // 通信設定 - Socket.ioをデフォルトとして使用
+        communicationLayerPreference: CommunicationLayerPreference.SOCKET,
         // ログ設定
         logging: {
           developerMode: IS_DEV_MODE,
         },
-        // 接続後のコールバック
-        onConnect: this.handleConnect.bind(this),
       });
 
       // ethereumオブジェクトを取得
@@ -55,6 +49,9 @@ class MetaMaskService {
       
       // イベントリスナーを設定
       this.setupEventListeners();
+      
+      // 初期接続処理
+      await this.handleConnect();
       
       return true;
     } catch (error) {
@@ -152,7 +149,7 @@ class MetaMaskService {
   }
 
   /**
-   * 暗号化されたデータをMetaMaskウォレットに保存します
+   * 暗号化されたデータをブラウザのローカルストレージに保存します
    * @param key キー
    * @param value 値
    */
@@ -168,8 +165,8 @@ class MetaMaskService {
         params: [value, this.accounts[0]],
       });
 
-      // 暗号化されたデータをローカルストレージに保存
-      await AsyncStorage.setItem(`secure_${key}`, encryptedData);
+      // 暗号化されたデータをブラウザのローカルストレージに保存
+      localStorage.setItem(`secure_${key}`, encryptedData);
       return true;
     } catch (error) {
       console.error('セキュアストレージへの保存に失敗しました:', error);
@@ -178,7 +175,7 @@ class MetaMaskService {
   }
 
   /**
-   * MetaMaskウォレットから暗号化されたデータを取得します
+   * 暗号化されたデータをブラウザのローカルストレージから取得します
    * @param key キー
    */
   public async secureRetrieve(key: string): Promise<string | null> {
@@ -187,8 +184,8 @@ class MetaMaskService {
         throw new Error('MetaMaskに接続されていません');
       }
 
-      // 暗号化されたデータをローカルストレージから取得
-      const encryptedData = await AsyncStorage.getItem(`secure_${key}`);
+      // 暗号化されたデータをブラウザのローカルストレージから取得
+      const encryptedData = localStorage.getItem(`secure_${key}`);
       if (!encryptedData) {
         return null;
       }

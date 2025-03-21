@@ -1,3 +1,13 @@
+import 'react-native-get-random-values';
+import '@ethersproject/shims';
+import { Platform } from 'react-native';
+
+if (Platform.OS === 'web') {
+  // Webプラットフォーム用のポリフィル
+  require('react-native-polyfill-globals/auto');
+  require('text-encoding');
+}
+
 import React, { useEffect, useState } from 'react';
 import { SafeAreaView, StatusBar, StyleSheet, View, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';

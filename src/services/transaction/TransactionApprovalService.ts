@@ -1,38 +1,17 @@
 import { EventEmitter } from 'events';
-import { TransactionData } from './TransactionMonitorService';
+import { TransactionData } from '../../types/transaction';
 import { TransactionEvaluationResult } from './RuleProcessorService';
-import metaMaskService from '../metamask/MetaMaskService';
+import { ApprovalStatus, ApprovalRequest } from '../../types/approval';
 import ruleProcessorService from './RuleProcessorService';
 import { ethers } from 'ethers';
 
-// 承認状態の定義
-export enum ApprovalStatus {
-  PENDING = 'pending',
-  APPROVED = 'approved',
-  REJECTED = 'rejected',
-  AUTO_APPROVED = 'auto_approved',
-  EXPIRED = 'expired'
-}
-
-// 承認リクエストの型定義
-export interface ApprovalRequest {
-  id: string;
-  transaction: TransactionData;
-  evaluationResult: TransactionEvaluationResult;
-  status: ApprovalStatus;
-  createdAt: number;
-  updatedAt: number;
-  expiresAt: number;
-  userComment?: string;
-}
-
 /**
- * トランザクション承認サービスクラス
- * トランザクションの承認/拒否フローを管理します
+ * トランザクション承認サービス
+ * トランザクション承認フローを管理します
  */
 class TransactionApprovalService extends EventEmitter {
   private approvalRequests: Map<string, ApprovalRequest> = new Map();
-  private requestTimeout: number = 5 * 60 * 1000; // デフォルトのタイムアウト: 5分
+  private requestTimeout: number = 5 * 60 * 1000; // 5分
   private autoApproveEnabled: boolean = false;
 
   /**
@@ -87,7 +66,8 @@ class TransactionApprovalService extends EventEmitter {
         status: ApprovalStatus.PENDING,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        expiresAt
+        expiresAt,
+        userComment: ''
       };
       
       // 自動承認が有効で、評価結果が承認の場合
@@ -123,6 +103,34 @@ class TransactionApprovalService extends EventEmitter {
   }
 
   /**
+   * トランザクションを承認対象として追加
+   * @param transaction トランザクションデータ
+   */
+  public addTransactionForApproval(transaction: TransactionData): string {
+    // リクエストIDを生成
+    const id = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 承認リクエストを作成
+    const request: ApprovalRequest = {
+      id,
+      transaction,
+      status: ApprovalStatus.PENDING,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      expiresAt: Date.now() + this.requestTimeout,
+      userComment: ''
+    };
+    
+    // リクエストを保存
+    this.approvalRequests.set(id, request);
+    
+    // 承認リクエストイベントを発火
+    this.emit('approval_update');
+    
+    return id;
+  }
+
+  /**
    * トランザクションを承認
    * @param requestId 承認リクエストID
    * @param comment オプションのコメント
@@ -149,6 +157,7 @@ class TransactionApprovalService extends EventEmitter {
       
       // 承認イベントを発火
       this.emit('transaction_approved', request);
+      this.emit('approval_update');
       
       // トランザクションを送信
       await this.executeTransaction(request);
@@ -187,6 +196,7 @@ class TransactionApprovalService extends EventEmitter {
       
       // 拒否イベントを発火
       this.emit('transaction_rejected', request);
+      this.emit('approval_update');
       
       return true;
     } catch (error) {
@@ -248,6 +258,7 @@ class TransactionApprovalService extends EventEmitter {
     
     // 期限切れイベントを発火
     this.emit('approval_expired', request);
+    this.emit('approval_update');
   }
 
   /**
@@ -267,8 +278,10 @@ class TransactionApprovalService extends EventEmitter {
         nonce: transaction.nonce
       };
       
-      // MetaMaskを通じてトランザクションを送信
-      const txHash = await metaMaskService.sendTransaction(tx);
+      // 現在この関数はモックしています
+      // 実際のアプリケーションではMetaMaskなどのウォレット連携で送信します
+      console.log('トランザクションを送信:', tx);
+      const txHash = `0x${Math.random().toString(36).substring(2, 15)}`;
       
       // 送信完了イベントを発火
       this.emit('transaction_sent', {
@@ -306,6 +319,13 @@ class TransactionApprovalService extends EventEmitter {
     }
     
     return clearedCount;
+  }
+
+  /**
+   * すべての承認を取得
+   */
+  public getApprovals(): ApprovalRequest[] {
+    return Array.from(this.approvalRequests.values());
   }
 }
 

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events';
+import { NativeEventEmitter, NativeModules } from 'react-native';
 
 // 通知タイプの定義
 export enum NotificationType {
@@ -36,12 +36,21 @@ export interface NotificationData {
  * アラートサービスクラス
  * 通知とアラートを管理するサービス
  */
-class AlertService extends EventEmitter {
+class AlertService extends NativeEventEmitter {
   private notifications: NotificationData[] = [];
   private notificationsEnabled: boolean = true;
   private dogBarkEnabled: boolean = true;
   private dogBarkVolume: number = 80;
   private dogBarkAudio: HTMLAudioElement | null = null;
+
+  constructor() {
+    super(NativeModules.AlertModule || {});
+    this.notifications = [];
+    this.notificationsEnabled = true;
+    this.dogBarkEnabled = true;
+    this.dogBarkVolume = 80;
+    this.dogBarkAudio = null;
+  }
 
   /**
    * アラートサービスを初期化

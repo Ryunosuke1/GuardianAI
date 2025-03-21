@@ -1,260 +1,100 @@
-import React, { createContext, useContext, ReactNode, useEffect, useState } from 'react';
-import { useSDK } from '@metamask/sdk-react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// MetaMaskコンテキストの型定義
 interface MetaMaskContextType {
-  isInitialized: boolean;
-  isConnecting: boolean;
   isConnected: boolean;
   accounts: string[];
-  chainId: string | null;
+  chainId: string;
   connect: () => Promise<void>;
-  disconnect: () => Promise<void>;
-  sendTransaction: (transaction: any) => Promise<string>;
-  signMessage: (message: string) => Promise<string>;
-  secureStore: (key: string, value: string) => Promise<boolean>;
-  secureRetrieve: (key: string) => Promise<string | null>;
-  error: Error | null;
+  disconnect: () => void;
 }
 
-// MetaMaskコンテキストの作成
-const MetaMaskContext = createContext<MetaMaskContextType | undefined>(undefined);
+const MetaMaskContext = createContext<MetaMaskContextType>({
+  isConnected: false,
+  accounts: [],
+  chainId: '',
+  connect: async () => {},
+  disconnect: () => {},
+});
 
-// MetaMaskプロバイダーのプロパティ
-interface MetaMaskProviderProps {
-  children: ReactNode;
-}
+export const useMetaMask = () => useContext(MetaMaskContext);
 
-/**
- * MetaMaskプロバイダーコンポーネント
- */
-export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) => {
-  // MetaMask SDK フックを使用
-  const { sdk, connected, connecting, provider, chainId, account, error: sdkError } = useSDK();
-  
-  // 状態
-  const [isInitialized, setIsInitialized] = useState<boolean>(false);
-  const [isConnecting, setIsConnecting] = useState<boolean>(false);
-  const [isConnected, setIsConnected] = useState<boolean>(false);
+export const MetaMaskProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isConnected, setIsConnected] = useState(false);
   const [accounts, setAccounts] = useState<string[]>([]);
-  const [error, setError] = useState<Error | null>(null);
-  const [signer, setSigner] = useState<ethers.JsonRpcSigner | null>(null);
-  const [currentChainId, setCurrentChainId] = useState<string | null>(null);
-  
-  // SDK初期化の監視
+  const [chainId, setChainId] = useState('');
+
+  // MetaMaskの接続状態を監視
   useEffect(() => {
-    if (sdk) {
-      setIsInitialized(true);
-      
-      // 既に接続されているかチェック
-      if (connected && account) {
-        setIsConnected(true);
-        setAccounts([account]);
+    checkConnection();
+    window.ethereum?.on('accountsChanged', handleAccountsChanged);
+    window.ethereum?.on('chainChanged', handleChainChanged);
+
+    return () => {
+      window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
+      window.ethereum?.removeListener('chainChanged', handleChainChanged);
+    };
+  }, []);
+
+  // MetaMaskの接続状態をチェック
+  const checkConnection = async () => {
+    if (window.ethereum) {
+      try {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+        if (accounts.length > 0) {
+          const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+          handleAccountsChanged(accounts);
+          setChainId(chainId);
+        }
+      } catch (error) {
+        console.error('MetaMaskの接続状態の確認に失敗しました:', error);
       }
     }
-  }, [sdk, connected, account]);
-  
-  // 接続状態の監視
-  useEffect(() => {
-    setIsConnecting(connecting);
-  }, [connecting]);
-  
-  // 接続状態の変更を監視
-  useEffect(() => {
-    setIsConnected(connected);
-    if (connected && account) {
-      setAccounts([account]);
+  };
+
+  // アカウントの変更を処理
+  const handleAccountsChanged = (accounts: string[]) => {
+    if (accounts.length > 0) {
+      setAccounts(accounts);
+      setIsConnected(true);
     } else {
       setAccounts([]);
+      setIsConnected(false);
     }
-  }, [connected, account]);
-  
-  // チェーンIDの監視
-  useEffect(() => {
-    if (chainId) {
-      // 16進数形式に変換
-      const hexChainId = typeof chainId === 'number' 
-        ? `0x${chainId.toString(16)}` 
-        : chainId;
-      
-      // 状態を更新
-      setCurrentChainId(hexChainId);
-    }
-  }, [chainId]);
-  
-  // エラーの監視
-  useEffect(() => {
-    if (sdkError) {
-      setError(sdkError instanceof Error ? sdkError : new Error(String(sdkError)));
-    }
-  }, [sdkError]);
-  
-  // プロバイダーとサイナーの設定
-  useEffect(() => {
-    const setupSigner = async () => {
-      if (provider && connected) {
-        try {
-          const ethersProvider = new ethers.BrowserProvider(provider);
-          const newSigner = await ethersProvider.getSigner();
-          setSigner(newSigner);
-        } catch (err) {
-          console.error('サイナーの設定に失敗しました:', err);
-          setError(err instanceof Error ? err : new Error('サイナーの設定に失敗しました'));
-        }
-      } else {
-        setSigner(null);
-      }
-    };
-    
-    setupSigner();
-  }, [provider, connected]);
-  
-  /**
-   * MetaMaskウォレットに接続
-   */
-  const connect = async (): Promise<void> => {
-    if (!isInitialized) {
-      setError(new Error('MetaMask SDKが初期化されていません'));
+  };
+
+  // チェーンの変更を処理
+  const handleChainChanged = (chainId: string) => {
+    setChainId(chainId);
+  };
+
+  // MetaMaskに接続
+  const connect = async () => {
+    if (!window.ethereum) {
+      alert('MetaMaskをインストールしてください');
       return;
     }
-    
-    setIsConnecting(true);
-    setError(null);
-    
+
     try {
-      await sdk?.connect();
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('MetaMask接続中に不明なエラーが発生しました'));
-    } finally {
-      setIsConnecting(false);
+      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const chainId = await window.ethereum.request({ method: 'eth_chainId' });
+      handleAccountsChanged(accounts);
+      setChainId(chainId);
+    } catch (error) {
+      console.error('MetaMaskへの接続に失敗しました:', error);
     }
   };
-  
-  /**
-   * MetaMaskウォレットから切断
-   */
-  const disconnect = async (): Promise<void> => {
-    if (!isInitialized) {
-      return;
-    }
-    
-    try {
-      await sdk?.disconnect();
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('MetaMask切断中に不明なエラーが発生しました'));
-    }
+
+  // MetaMaskから切断
+  const disconnect = () => {
+    setAccounts([]);
+    setIsConnected(false);
+    setChainId('');
   };
-  
-  /**
-   * トランザクションを送信
-   */
-  const sendTransaction = async (transaction: any): Promise<string> => {
-    if (!isInitialized || !isConnected || !signer) {
-      throw new Error('MetaMaskに接続されていません');
-    }
-    
-    try {
-      const tx = await signer.sendTransaction(transaction);
-      return tx.hash;
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('トランザクション送信中に不明なエラーが発生しました'));
-      throw err;
-    }
-  };
-  
-  /**
-   * メッセージに署名
-   */
-  const signMessage = async (message: string): Promise<string> => {
-    if (!isInitialized || !isConnected || !signer) {
-      throw new Error('MetaMaskに接続されていません');
-    }
-    
-    try {
-      return await signer.signMessage(message);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('メッセージ署名中に不明なエラーが発生しました'));
-      throw err;
-    }
-  };
-  
-  /**
-   * セキュアストレージにデータを保存
-   */
-  const secureStore = async (key: string, value: string): Promise<boolean> => {
-    if (!isInitialized || !isConnected || !signer) {
-      throw new Error('MetaMaskに接続されていません');
-    }
-    
-    try {
-      // データを暗号化して保存
-      const encryptedData = await signer.signMessage(value);
-      // 暗号化されたデータをローカルストレージに保存
-      await AsyncStorage.setItem(`secure_${key}`, encryptedData);
-      return true;
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('セキュアストレージへの保存中に不明なエラーが発生しました'));
-      throw err;
-    }
-  };
-  
-  /**
-   * セキュアストレージからデータを取得
-   */
-  const secureRetrieve = async (key: string): Promise<string | null> => {
-    if (!isInitialized || !isConnected) {
-      throw new Error('MetaMaskに接続されていません');
-    }
-    
-    try {
-      // 暗号化されたデータをローカルストレージから取得
-      const encryptedData = await AsyncStorage.getItem(`secure_${key}`);
-      if (!encryptedData) {
-        return null;
-      }
-      
-      // データを復号化（この実装では単純化のため、暗号化されたデータをそのまま返す）
-      return encryptedData;
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error('セキュアストレージからの取得中に不明なエラーが発生しました'));
-      throw err;
-    }
-  };
-  
-  // コンテキスト値
-  const contextValue: MetaMaskContextType = {
-    isInitialized,
-    isConnecting,
-    isConnected,
-    accounts,
-    chainId: currentChainId,
-    connect,
-    disconnect,
-    sendTransaction,
-    signMessage,
-    secureStore,
-    secureRetrieve,
-    error,
-  };
-  
+
   return (
-    <MetaMaskContext.Provider value={contextValue}>
+    <MetaMaskContext.Provider value={{ isConnected, accounts, chainId, connect, disconnect }}>
       {children}
     </MetaMaskContext.Provider>
   );
 };
-
-/**
- * MetaMaskコンテキストを使用するためのカスタムフック
- */
-export const useMetaMask = (): MetaMaskContextType => {
-  const context = useContext(MetaMaskContext);
-  if (context === undefined) {
-    throw new Error('useMetaMaskはMetaMaskProviderの中で使用する必要があります');
-  }
-  return context;
-};
-
-export default useMetaMask;
