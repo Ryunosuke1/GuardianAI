@@ -159,7 +159,7 @@ const TransactionMonitor: React.FC = () => {
   useEffect(() => {
     if (isConnected && accounts.length > 0) {
       // アカウントが接続されたら監視対象に追加
-      transactionMonitorService.addWatchedAddress(accounts[0]);
+      transactionMonitorService.addMonitoredAddress(accounts[0]);
       
       // 監視中なら再起動
       if (isMonitoring) {
@@ -203,7 +203,7 @@ const TransactionMonitor: React.FC = () => {
         // 監視を開始
         if (isConnected && accounts.length > 0) {
           // アカウントが接続されていれば監視対象に追加
-          transactionMonitorService.addWatchedAddress(accounts[0]);
+          transactionMonitorService.addMonitoredAddress(accounts[0]);
         }
         
         // 監視を開始
