@@ -26,8 +26,20 @@
       "package": "com.guardianai.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "favicon": "./assets/icon.png",
+      "bundler": "metro",
+      "build": {
+        "babel": {
+          "include": [
+            "@expo/vector-icons",
+            "react-native-web",
+            "react-native-svg",
+            "react-native-paper",
+            "@react-navigation/native",
+            "@react-navigation/stack"
+          ]
+        }
+      }
     },
     "plugins": [
       "expo-router"

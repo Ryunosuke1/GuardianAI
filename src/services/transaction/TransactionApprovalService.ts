@@ -4,7 +4,7 @@ import { TransactionEvaluationResult } from './RuleProcessorService';
 import { ApprovalStatus, ApprovalRequest } from '../../types/approval';
 import ruleProcessorService from './RuleProcessorService';
 import { ethers } from 'ethers';
-import metaMaskService from '../metamask/MetaMaskService';
+import { metaMaskService } from '../metamask/MetaMaskService';
 
 /**
  * トランザクション承認サービス

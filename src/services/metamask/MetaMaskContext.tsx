@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { ethers } from 'ethers';
-import metaMaskService from './MetaMaskService';
+import { metaMaskService } from './MetaMaskService';
 
 interface MetaMaskContextType {
   isConnected: boolean;

@@ -74,16 +74,24 @@ export const MetaMaskProvider: React.FC<MetaMaskProviderProps> = ({ children }) 
   
   // チェーンIDの更新関数
   const updateChainId = (newChainId: string) => {
-    const numChainId = parseInt(newChainId);
-    const hexChainId = `0x${numChainId.toString(16)}`;
+    // 文字列として処理し、BigIntを避ける
+    let hexChainId = newChainId;
+    if (!newChainId.startsWith('0x')) {
+      // 数値文字列の場合は16進数に変換
+      hexChainId = `0x${Number(newChainId).toString(16)}`;
+    }
     setCurrentChainId(hexChainId);
   };
 
   // チェーンIDの変更を監視
   useEffect(() => {
     if (chainId) {
-      const numChainId = parseInt(chainId);
-      const hexChainId = `0x${numChainId.toString(16)}`;
+      // 文字列として処理し、BigIntを避ける
+      let hexChainId = chainId;
+      if (!chainId.startsWith('0x')) {
+        // 数値文字列の場合は16進数に変換
+        hexChainId = `0x${Number(chainId).toString(16)}`;
+      }
       setCurrentChainId(hexChainId);
     }
   }, [chainId]);

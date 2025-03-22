@@ -1,23 +1,20 @@
-import 'react-native-get-random-values';
-import '@ethersproject/shims';
-import { Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { SafeAreaView, StatusBar, StyleSheet, View, Text, TouchableOpacity, Platform } from 'react-native';
 
-// ポリフィルのインポート
-import './src/polyfills';
-
+// ポリフィルのインポート（Web用）
 if (Platform.OS === 'web') {
-  // Webプラットフォーム用の追加ポリフィル
+  require('./src/polyfills');
   require('text-encoding');
 }
 
-import React, { useEffect, useState } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet, View, Text } from 'react-native';
+import 'react-native-get-random-values';
+import '@ethersproject/shims';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Provider as PaperProvider, IconButton } from 'react-native-paper';
 
 // サービス
-import metaMaskService from './src/services/metamask/MetaMaskService';
+import { metaMaskService } from './src/services/metamask/MetaMaskService';
 import { MetaMaskProvider } from './src/services/metamask/MetaMaskContext';
 import transactionMonitorService from './src/services/transaction/TransactionMonitorService';
 import alertService from './src/services/alert/AlertService';
@@ -53,9 +50,9 @@ const App: React.FC = () => {
     const initializeApp = async () => {
       try {
         // MetaMask SDKの初期化
-        const metaMaskInitialized = await metaMaskService.initialize();
-        if (!metaMaskInitialized) {
-          setInitError('MetaMask SDKの初期化に失敗しました');
+        const initResult = await metaMaskService.initialize();
+        if (!initResult.success) {
+          setInitError(initResult.error || 'MetaMask SDKの初期化に失敗しました');
           return;
         }
 
@@ -103,8 +100,38 @@ const App: React.FC = () => {
     };
   }, []);
 
-  // 初期化エラー表示
+  // エラー状態の表示
   if (initError) {
+    if (initError.includes('MetaMask')) {
+      return (
+        <SafeAreaView style={styles.errorContainer}>
+          <View style={styles.errorContent}>
+            <NordicIcon.Alert width={48} height={48} color={nordicTheme.custom.colors.state.warning} />
+            <View style={styles.errorTextContainer}>
+              <Text style={styles.errorTitle}>MetaMaskが必要です</Text>
+            <Text style={styles.errorMessage}>
+              このアプリケーションを使用するにはMetaMaskブラウザ拡張機能が必要です。
+              {'\n\n'}
+              MetaMaskがインストールされている場合は、ブラウザがMetaMaskを認識できない状態です。
+              以下をお試しください：
+              {'\n\n'}
+              1. ブラウザの拡張機能が有効になっているか確認
+              {'\n'}
+              2. ページを再読み込み
+              {'\n'}
+              3. MetaMaskを再起動
+            </Text>
+            </View>
+          </View>
+          <TouchableOpacity 
+            style={styles.installButton}
+            onPress={() => window.open('https://metamask.io/download/', '_blank')}
+          >
+            <Text style={styles.installButtonText}>MetaMaskをインストール</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      );
+    }
     return (
       <SafeAreaView style={styles.errorContainer}>
         <View style={styles.errorContent}>
@@ -112,6 +139,21 @@ const App: React.FC = () => {
           <View style={styles.errorTextContainer}>
             <Text style={styles.errorTitle}>初期化エラー</Text>
             <Text style={styles.errorMessage}>{initError}</Text>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ローディング表示
+  if (!isInitialized) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <View style={styles.loadingContent}>
+          <NordicIcon.Loading width={48} height={48} color={nordicTheme.custom.colors.primary.main} />
+          <View style={styles.loadingTextContainer}>
+            <Text style={styles.loadingTitle}>読み込み中...</Text>
+            <Text style={styles.loadingMessage}>GuardianAIを初期化しています。しばらくお待ちください。</Text>
           </View>
         </View>
       </SafeAreaView>
@@ -191,6 +233,20 @@ const App: React.FC = () => {
 
 // スタイル
 const styles = StyleSheet.create({
+  installButton: {
+    backgroundColor: nordicTheme.custom.colors.primary.main,
+    padding: nordicTheme.custom.spacing.md,
+    borderRadius: nordicTheme.custom.roundness.md,
+    marginTop: nordicTheme.custom.spacing.lg,
+    width: '80%',
+    maxWidth: 300,
+    alignItems: 'center',
+  },
+  installButtonText: {
+    color: '#FFFFFF',
+    fontSize: nordicTheme.custom.fontSizes.md,
+    fontWeight: 'bold',
+  },
   container: {
     flex: 1,
     backgroundColor: nordicTheme.custom.colors.background.default,
@@ -228,6 +284,36 @@ const styles = StyleSheet.create({
     marginBottom: nordicTheme.custom.spacing.xs,
   },
   errorMessage: {
+    fontSize: nordicTheme.custom.fontSizes.md,
+    color: nordicTheme.custom.colors.text.secondary,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: nordicTheme.custom.colors.background.default,
+    padding: nordicTheme.custom.spacing.lg,
+  },
+  loadingContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: nordicTheme.custom.colors.background.paper,
+    padding: nordicTheme.custom.spacing.md,
+    borderRadius: nordicTheme.custom.roundness.md,
+    ...nordicTheme.custom.shadows.md,
+    maxWidth: 500,
+  },
+  loadingTextContainer: {
+    marginLeft: nordicTheme.custom.spacing.md,
+    flex: 1,
+  },
+  loadingTitle: {
+    fontSize: nordicTheme.custom.fontSizes.lg,
+    fontWeight: 'bold',
+    color: nordicTheme.custom.colors.primary.main,
+    marginBottom: nordicTheme.custom.spacing.xs,
+  },
+  loadingMessage: {
     fontSize: nordicTheme.custom.fontSizes.md,
     color: nordicTheme.custom.colors.text.secondary,
   },
